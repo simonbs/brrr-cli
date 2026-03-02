@@ -94,19 +94,18 @@ brrr agent install <claude|codex|all> --webhook <value> [--idle-seconds <seconds
 | Value | Example |
 |---|---|
 | brrr webhook URL | `https://api.brr.now/v1/br_your_webhook_id` |
-| Env var reference | `$BRRR_WEBHOOK_URL` |
-| Braced env var reference | `${BRRR_WEBHOOK_URL}` |
+| Environment variable | `$BRRR_WEBHOOK_URL` or `${BRRR_WEBHOOK_URL}` |
 
 Recommended usage:
 
 | Approach | When to use it |
 |---|---|
 | Hardcoded URL | Fastest way to get started and verify everything works |
-| Env var | Best practice for a persistent local setup |
+| Environment variable | Best practice for a persistent local setup |
 
-Env-var webhook references are resolved when the installed hook runs, not during install. Resolved values must also match `https://api.brr.now/v1/br_*`.
+Environment variables are resolved when the installed hook runs, not during install. Resolved values must also match `https://api.brr.now/v1/br_*`.
 
-Use single quotes when installing with an env var reference so your shell does not expand it too early:
+Use single quotes when installing with an environment variable so your shell does not expand it too early:
 
 ```sh
 brrr agent install all --webhook '$BRRR_WEBHOOK_URL'

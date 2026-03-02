@@ -1,8 +1,8 @@
 class Brrr < Formula
   desc "Webhook notifications for Claude Code and Codex"
   homepage "https://github.com/simonbs/brrr-cli"
-  url "https://github.com/simonbs/brrr-cli/archive/refs/tags/v0.1.2.tar.gz"
-  sha256 "404bdc11d85b5159ad6ebb0b0861a3686a85745795fe050841c525858c0a1acf"
+  url "https://github.com/simonbs/brrr-cli/archive/refs/tags/v0.1.3.tar.gz"
+  sha256 "66c2f818ffed169807b5367779db24860e24bf45f1086436ae18ceae6b55f5ba"
   head "https://github.com/simonbs/brrr-cli.git", branch: "main"
 
   depends_on "node"
