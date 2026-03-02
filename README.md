@@ -21,6 +21,7 @@
 <div align="center">
   <a href="#-why">✨ Why?</a>&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="#-getting-started">🚀 Getting Started</a>&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="#-supported-agents">🤖 Supported Agents</a>&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="#-usage">🧭 Usage</a>
 </div>
 
@@ -65,9 +66,16 @@ It's considered best-practice to put your webhook URL in `~/.zshrc` or similar a
 brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
 ```
 
+## 🤖 Supported Agents
+
+| Agent       | Auto-Install | Config                    | Hooks                                                                         |
+|-------------|:------------:|---------------------------|-------------------------------------------------------------------------------|
+| Claude Code | ✅           | `~/.claude/settings.json` | `Stop`, `Notification(permission_prompt)`, and `PreToolUse(AskUserQuestion)`. |
+| Codex       | ✅           | `~/.codex/config.toml`    | `notify`                                                                      |
+
 ## 🧭 Usage
 
-### Commands
+### Command Overview
 
 | Command | Purpose |
 |---|---|
@@ -75,29 +83,13 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
 | `brrr agent uninstall <claude\|codex\|all>` | Remove only brrr-managed hooks. |
 | `brrr agent status` | Show which agents are present, installed, and where config lives. |
 
-### Examples
+### Install Hooks
+
+Use `brrr agent install` to install or reinstall hooks for one agent or all supported agents.
 
 ```sh
-$ brrr agent install claude --webhook '$BRRR_WEBHOOK_URL'
-
-$ brrr agent install codex --webhook 'https://api.brr.now/v1/br_your_webhook_id'
-
-$ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
-
-$ brrr agent status
-Agent     Present Installed Idle    Config
-claude    yes     yes       300s    ~/.claude/settings.json
-codex     yes     yes       300s    ~/.codex/config.toml
-
-$ brrr agent uninstall codex
+brrr agent install <claude|codex|all> --webhook <value> [--idle-seconds <seconds>]
 ```
-
-### Supported Agents
-
-| Agent       | Auto-Install | Config                    | Hooks                                                                         |
-|-------------|:------------:|---------------------------|-------------------------------------------------------------------------------|
-| Claude Code | ✅           | `~/.claude/settings.json` | `Stop`, `Notification(permission_prompt)`, and `PreToolUse(AskUserQuestion)`. |
-| Codex       | ✅           | `~/.codex/config.toml`    | `notify`                                                                      |
 
 ### Webhook Values
 
@@ -135,3 +127,44 @@ export BRRR_WEBHOOK_URL='https://api.brr.now/v1/br_your_webhook_id'
 `--idle-seconds` is optional.
 
 When set, `brrr` checks macOS HID idle time and only sends if the machine has been idle for at least that many seconds. From the user’s perspective, that means no keyboard or mouse activity for that duration.
+
+### Check Installation Status
+
+Use `brrr agent status` to see which supported agents are present, whether `brrr` has installed hooks for them, and which config files are being used.
+
+```sh
+brrr agent status
+```
+
+Example output:
+
+```text
+Agent     Present Installed Idle    Config
+claude    yes     yes       300s    ~/.claude/settings.json
+codex     yes     yes       300s    ~/.codex/config.toml
+```
+
+### Remove Hooks
+
+Use `brrr agent uninstall` to remove only the hooks managed by `brrr`.
+
+```sh
+brrr agent uninstall <claude|codex|all>
+```
+
+### Examples
+
+```sh
+$ brrr agent install claude --webhook '$BRRR_WEBHOOK_URL'
+
+$ brrr agent install codex --webhook 'https://api.brr.now/v1/br_your_webhook_id'
+
+$ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
+
+$ brrr agent status
+Agent     Present Installed Idle    Config
+claude    yes     yes       300s    ~/.claude/settings.json
+codex     yes     yes       300s    ~/.codex/config.toml
+
+$ brrr agent uninstall codex
+```
