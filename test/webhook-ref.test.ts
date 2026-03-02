@@ -3,9 +3,9 @@ import { parseWebhookRef, resolveWebhookRef } from "../src/agent/webhook-ref.js"
 
 describe("webhook refs", () => {
   test("parses literal URL", () => {
-    expect(parseWebhookRef("https://api.brr.now/v1/br_test")).toEqual({
+    expect(parseWebhookRef("https://api.brrr.now/v1/br_test")).toEqual({
       kind: "literal",
-      value: "https://api.brr.now/v1/br_test"
+      value: "https://api.brrr.now/v1/br_test"
     })
     expect(parseWebhookRef("https://dev.api.brrr.now/v1/br_test")).toEqual({
       kind: "literal",
@@ -28,14 +28,14 @@ describe("webhook refs", () => {
 
   test("rejects malformed refs", () => {
     expect(() => parseWebhookRef("$bad")).toThrow()
-    expect(() => parseWebhookRef("ftp://api.brr.now/v1/br_test")).toThrow()
+    expect(() => parseWebhookRef("ftp://api.brrr.now/v1/br_test")).toThrow()
     expect(() => parseWebhookRef("https://example.com/v1/br_test")).toThrow()
-    expect(() => parseWebhookRef("https://api.brr.now/v1/not_brrr")).toThrow()
+    expect(() => parseWebhookRef("https://api.brrr.now/v1/not_brrr")).toThrow()
   })
 
   test("resolves env refs", () => {
     const ref = parseWebhookRef("$BRRR_WEBHOOK_URL")
-    expect(resolveWebhookRef(ref, { BRRR_WEBHOOK_URL: "https://api.brr.now/v1/br_test" })).toBe("https://api.brr.now/v1/br_test")
+    expect(resolveWebhookRef(ref, { BRRR_WEBHOOK_URL: "https://api.brrr.now/v1/br_test" })).toBe("https://api.brrr.now/v1/br_test")
     expect(resolveWebhookRef(ref, { BRRR_WEBHOOK_URL: "https://dev.api.brrr.now/v1/br_test" })).toBe("https://dev.api.brrr.now/v1/br_test")
     expect(() => resolveWebhookRef(ref, {})).toThrow()
   })

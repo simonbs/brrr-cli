@@ -8,15 +8,15 @@ import { parseWebhookRef } from "../src/agent/webhook-ref.js"
 
 describe("claude config generation", () => {
   test("generates finished hook command", () => {
-    const command = buildClaudeCommand("finished", parseWebhookRef("https://api.brr.now/v1/br_test"), "marker")
+    const command = buildClaudeCommand("finished", parseWebhookRef("https://api.brrr.now/v1/br_test"), "marker")
     expect(command).toContain("agent dispatch")
     expect(command).toContain("--event finished")
-    expect(command).toContain("--webhook 'https://api.brr.now/v1/br_test'")
+    expect(command).toContain("--webhook 'https://api.brrr.now/v1/br_test'")
     expect(command).toContain("# marker")
   })
 
   test("includes idle threshold when configured", () => {
-    const command = buildClaudeCommand("finished", parseWebhookRef("https://api.brr.now/v1/br_test"), "marker", 300)
+    const command = buildClaudeCommand("finished", parseWebhookRef("https://api.brrr.now/v1/br_test"), "marker", 300)
     expect(command).toContain("--idle-seconds 300")
   })
 
@@ -26,7 +26,7 @@ describe("claude config generation", () => {
   })
 
   test("keeps ownership marker internal to the shell command", () => {
-    const command = buildClaudeCommand("needs-approval", parseWebhookRef("https://api.brr.now/v1/br_test"), "brrr:marker")
+    const command = buildClaudeCommand("needs-approval", parseWebhookRef("https://api.brrr.now/v1/br_test"), "brrr:marker")
     expect(command).not.toContain("--marker")
     expect(command).toContain("# brrr:marker")
   })

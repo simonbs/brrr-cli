@@ -22,8 +22,8 @@ describe("install command behavior", () => {
 
     const { installClaude, getClaudeConfigPath } = await import("../src/agent/config/claude-settings.js")
 
-    const first = await installClaude({ webhook: parseWebhookRef("https://api.brr.now/v1/br_test") })
-    const second = await installClaude({ webhook: parseWebhookRef("https://api.brr.now/v1/br_test") })
+    const first = await installClaude({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
+    const second = await installClaude({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
 
     expect(first.message).toBe("installed")
     expect(first.backupPath).toBeUndefined()
@@ -40,8 +40,8 @@ describe("install command behavior", () => {
 
     const { installCodex, getCodexConfigPath } = await import("../src/agent/config/codex-config.js")
 
-    const first = await installCodex({ webhook: parseWebhookRef("https://api.brr.now/v1/br_test") })
-    const second = await installCodex({ webhook: parseWebhookRef("https://api.brr.now/v1/br_test") })
+    const first = await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
+    const second = await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
 
     expect(first.message).toBe("installed")
     expect(first.backupPath).toBeUndefined()

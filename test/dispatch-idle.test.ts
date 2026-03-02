@@ -20,7 +20,7 @@ describe("dispatch idle gating", () => {
     await dispatchCommand({
       agent: "codex",
       event: "finished",
-      webhook: "https://api.brr.now/v1/br_test",
+      webhook: "https://api.brrr.now/v1/br_test",
       idleSeconds: 300,
       payloadJson: JSON.stringify({
         cwd: "/tmp/project",

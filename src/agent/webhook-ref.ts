@@ -4,7 +4,7 @@ export type WebhookRef =
 
 const ENV_REF_PATTERN = /^\$([A-Z0-9_]+)$/
 const BRACED_ENV_REF_PATTERN = /^\$\{([A-Z0-9_]+)\}$/
-const ALLOWED_HOSTNAMES = new Set(["api.brr.now", "dev.api.brrr.now"])
+const ALLOWED_HOSTNAMES = new Set(["api.brrr.now", "dev.api.brrr.now"])
 
 export function parseWebhookRef(rawValue: string): WebhookRef {
   const raw = rawValue.trim()
@@ -15,7 +15,7 @@ export function parseWebhookRef(rawValue: string): WebhookRef {
     return { kind: "env", name: envMatch[1], raw }
   }
 
-  assertBrrrWebhookUrl(raw, "Webhook must be a brrr webhook URL like https://api.brr.now/v1/br_*.")
+  assertBrrrWebhookUrl(raw, "Webhook must be a brrr webhook URL like https://api.brrr.now/v1/br_*.")
   return { kind: "literal", value: raw }
 }
 
@@ -29,7 +29,7 @@ export function resolveWebhookRef(ref: WebhookRef, env: NodeJS.ProcessEnv = proc
 
   assertBrrrWebhookUrl(
     value,
-    `Resolved webhook from ${ref.raw} must be a brrr webhook URL like https://api.brr.now/v1/br_*.`
+    `Resolved webhook from ${ref.raw} must be a brrr webhook URL like https://api.brrr.now/v1/br_*.`
   )
   return value
 }

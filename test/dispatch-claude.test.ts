@@ -29,7 +29,7 @@ describe("claude dispatch", () => {
       await dispatchCommand({
         agent: "claude",
         event: "finished",
-        webhook: "https://api.brr.now/v1/br_test"
+        webhook: "https://api.brrr.now/v1/br_test"
       })
     } finally {
       Object.defineProperty(process, "stdin", {
@@ -74,7 +74,7 @@ describe("claude dispatch", () => {
       await dispatchCommand({
         agent: "claude",
         event: "needs-approval",
-        webhook: "https://api.brr.now/v1/br_test"
+        webhook: "https://api.brrr.now/v1/br_test"
       })
     } finally {
       Object.defineProperty(process, "stdin", {

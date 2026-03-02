@@ -14,7 +14,7 @@ describe("webhook transport", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    await sendWebhook(parseWebhookRef("https://api.brr.now/v1/br_test"), {
+    await sendWebhook(parseWebhookRef("https://api.brrr.now/v1/br_test"), {
       message: "hello",
       title: "Title",
       subtitle: "Subtitle"
@@ -41,7 +41,7 @@ describe("webhook transport", () => {
       json: async () => ({ success: false, error: "bad request" })
     }))
 
-    const result = await sendWebhook(parseWebhookRef("https://api.brr.now/v1/br_test"), {
+    const result = await sendWebhook(parseWebhookRef("https://api.brrr.now/v1/br_test"), {
       message: "hello"
     }, "interactive")
 
