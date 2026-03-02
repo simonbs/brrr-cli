@@ -13,7 +13,7 @@ class Brrr < Formula
     system "npm", "prune", "--omit=dev"
 
     libexec.install Dir["*"]
-    (bin/"brrr").write_exec_script libexec/"dist/src/cli.js"
+    bin.install_symlink libexec/"dist/src/cli.js" => "brrr"
   end
 
   test do
