@@ -1,5 +1,5 @@
 <div align="center">
-  <h3><strong>brrr</strong> — notifications for agent CLIs using <a href="https://brrr.now" target="_blank">brrr.now</a></h3>
+  <h3><strong>brrr-cli</strong> — notifications for agent CLIs using <a href="https://brrr.now" target="_blank">brrr.now</a></h3>
   <p>Easy peasy installation of Claude Code and Codex hooks to send push notifications.</p>
 </div>
 
