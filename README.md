@@ -75,8 +75,6 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
 
 ## 🧭 Usage
 
-### Command Overview
-
 | Command | Purpose |
 |---|---|
 | `brrr agent install <claude\|codex\|all> --webhook <value> [--idle-seconds <seconds>]` | Install or reinstall brrr-managed hooks using a `https://api.brr.now/v1/br_*` webhook. |
@@ -90,8 +88,6 @@ Use `brrr agent install` to install or reinstall hooks for one agent or all supp
 ```sh
 brrr agent install <claude|codex|all> --webhook <value> [--idle-seconds <seconds>]
 ```
-
-### Webhook Values
 
 `--webhook` accepts the following forms:
 
@@ -122,11 +118,11 @@ If you want the variable available in future shell sessions, add it to your shel
 export BRRR_WEBHOOK_URL='https://api.brr.now/v1/br_your_webhook_id'
 ```
 
-### Idle Notifications
+#### Only Notify When Idle
 
 `--idle-seconds` is optional.
 
-When set, `brrr` checks macOS HID idle time and only sends if the machine has been idle for at least that many seconds. From the user’s perspective, that means no keyboard or mouse activity for that duration.
+When set, `brrr` only sends notification when the machine has been idle for at least that many seconds. In this case "idle" means means no keyboard or mouse activity for that duration.
 
 ### Check Installation Status
 
