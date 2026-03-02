@@ -1,6 +1,6 @@
 <div align="center">
-  <h3><strong>brrr</strong> — webhook notifications for agent CLIs</h3>
-  <p>Claude Code and Codex hooks, installed cleanly.</p>
+  <h3><strong>brrr</strong> — notifications for agent CLIs using [brrr.now](https://brro.now)</h3>
+  <p>Easy peasy installation of Claude Code and Codex hooks to send push notifications.</p>
 </div>
 
 <hr />
