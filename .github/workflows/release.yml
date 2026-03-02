@@ -1,0 +1,107 @@
+name: Release CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New release version in major.minor.patch form"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Validate version syntax
+        run: |
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be major.minor.patch"
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Update package version
+        run: npm version "${VERSION}" --no-git-tag-version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build CLI
+        run: npm run build
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "Bump CLI version to v${VERSION}"
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin HEAD
+          git push origin "v${VERSION}"
+
+      - name: Calculate release archive SHA
+        id: release-sha
+        run: |
+          URL="https://github.com/simonbs/brrr-cli/archive/refs/tags/v${VERSION}.tar.gz"
+
+          for i in {1..10}; do
+            if SHA=$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1); then
+              echo "archive-url=$URL" >> "$GITHUB_OUTPUT"
+              echo "archive-sha=$SHA" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "Failed to fetch release archive after creating tag: $URL"
+          exit 1
+
+      - name: Update Homebrew formula
+        env:
+          ARCHIVE_URL: ${{ steps.release-sha.outputs.archive-url }}
+          ARCHIVE_SHA: ${{ steps.release-sha.outputs.archive-sha }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os, re
+          path = Path("Formula/brrr.rb")
+          text = path.read_text()
+          text = re.sub(r'url ".*"', f'url "{os.environ["ARCHIVE_URL"]}"', text, count=1)
+          text = re.sub(r'sha256 ".*"', f'sha256 "{os.environ["ARCHIVE_SHA"]}"', text, count=1)
+          path.write_text(text)
+          PY
+
+      - name: Commit and push formula update
+        run: |
+          git add Formula/brrr.rb
+          git commit -m "Update Homebrew formula for v${VERSION}"
+          git push origin HEAD
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --generate-notes
