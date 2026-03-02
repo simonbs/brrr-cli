@@ -94,10 +94,10 @@ $ brrr agent uninstall codex
 
 ### Supported Agents
 
-| Agent | Events | Config touched | Notes |
-|---|---|---|---|
-| Claude Code | `finished`, `needs-approval` | `~/.claude/settings.json` | Uses `Stop`, `Notification(permission_prompt)`, and `PreToolUse(AskUserQuestion)`. |
-| OpenAI Codex | `finished` | `~/.codex/config.toml` | Uses Codex `notify`. Current Codex notify support does not expose approval-specific hooks. |
+| Agent       | Auto-Install | Config                    | Hooks                                                                         |
+|-------------|:------------:|---------------------------|-------------------------------------------------------------------------------|
+| Claude Code | ✅           | `~/.claude/settings.json` | `Stop`, `Notification(permission_prompt)`, and `PreToolUse(AskUserQuestion)`. |
+| Codex       | ✅           | `~/.codex/config.toml`    | `notify`                                                                      |
 
 ### Webhook Values
 
