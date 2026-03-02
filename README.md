@@ -29,14 +29,9 @@
 ## ✨ Why?
 `brrr agent` installs webhook notifications for supported AI agent CLIs on macOS.
 
-The goal is simple: when Claude or Codex finishes, needs approval, or needs your input, send a push through your `brrr` webhook without making you hand-edit agent config.
+The goal is simple: when Claude or Codex finishes, needs approval, or needs your input, send a push through your <a href="https://brrr.now" target="_blank">brrr</a> webhook.
 
-It is opinionated in a few ways:
-
-- native agent config stays the source of truth
-- installs are idempotent
-- unrelated user config is preserved
-- webhook delivery stays non-blocking for the agent
+It uses <a href="https://code.claude.com/docs/en/hooks" target="_blank">Claude's hooks</a> and <a href="https://developers.openai.com/codex/config-reference/" target="_blank">Codex' notify</a> to detect the agent is done. The CLI automatically modifies `~/.claude/settings.json` and `~/.codex/config.toml` to setup the hooks and commands.
 
 ## 🚀 Getting Started
 
@@ -47,28 +42,14 @@ brew tap simonbs/brrr-cli https://github.com/simonbs/brrr-cli.git
 brew install brrr
 ```
 
-Or build and link the local CLI:
-
-```sh
-npm install
-npm run build
-npm link
-```
-
 Then install agent integrations with your webhook:
 
 ```sh
-brrr agent install all --webhook 'https://api.brr.now/v1/br_your_webhook_id'
+brrr agent install all \
+    --webhook 'https://api.brr.now/v1/br_your_webhook_id'
 ```
 
-That is the easiest way to get started.
-
-For a longer-lived setup, use an env var instead:
-
-```sh
-export BRRR_WEBHOOK_URL='https://api.brr.now/v1/br_your_webhook_id'
-brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
-```
+You can find your webhook in the <a href="https://brrr.now" target="_blank">brrr</a> app.
 
 If you only want pushes when you are away from the machine, add an idle threshold:
 
@@ -76,6 +57,12 @@ If you only want pushes when you are away from the machine, add an idle threshol
 brrr agent install all \
   --webhook 'https://api.brr.now/v1/br_your_webhook_id' \
   --idle-seconds 300
+```
+
+It's considered best-practice to put your webhook URL in `~/.zshrc` or similar and have it injected into the command when it's invoked.
+
+```sh
+brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
 ```
 
 ## 🧭 Usage
@@ -148,12 +135,3 @@ export BRRR_WEBHOOK_URL='https://api.brr.now/v1/br_your_webhook_id'
 `--idle-seconds` is optional.
 
 When set, `brrr` checks macOS HID idle time and only sends if the machine has been idle for at least that many seconds. From the user’s perspective, that means no keyboard or mouse activity for that duration.
-
-## 📝 Notes
-
-| Topic | Detail |
-|---|---|
-| Platform | macOS only |
-| Config safety | `brrr` edits only brrr-owned entries and creates backups before changes |
-| Delivery | webhook sends use a short timeout and do not block agent workflows |
-| Click-through | installed integrations do not set `open_url` in this first pass |
