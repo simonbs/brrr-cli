@@ -28,7 +28,7 @@
 <hr />
 
 ## ✨ Why?
-`brrr agent` installs webhook notifications for supported AI agent CLIs on macOS.
+`brrr` installs webhook notifications for supported AI agent CLIs on macOS.
 
 The goal is simple: when Claude or Codex finishes, needs approval, or needs your input, send a push through your <a href="https://brrr.now" target="_blank">brrr</a> webhook.
 
