@@ -79,7 +79,7 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 
 | Command | Purpose |
 |---|---|
-| `brrr agent install <claude\|codex\|all> --webhook <value> --idle-seconds <seconds>` | Install or reinstall brrr-managed hooks using a `https://api.brrr.now/v1/br_*` webhook. |
+| `brrr agent install <claude\|codex\|all> --webhook <value> --idle-seconds <seconds>` | Install or reinstall hooks using a `https://api.brrr.now/v1/br_*` webhook. |
 | `brrr agent uninstall <claude\|codex\|all>` | Remove only brrr-managed hooks. |
 | `brrr agent status` | Show which agents are present, installed, and where config lives. |
 
