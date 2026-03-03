@@ -1,6 +1,6 @@
 {
   "name": "brrr",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Agent notifications for brrr on macOS",
   "type": "module",
   "bin": {
