@@ -54,14 +54,6 @@ brrr agent install all \
 
 You can find your webhook in the <a href="https://brrr.now" target="_blank">brrr</a> app.
 
-If you only want pushes when you are away from the machine, add an idle threshold:
-
-```sh
-brrr agent install all \
-  --webhook 'https://api.brrr.now/v1/br_your_webhook_id' \
-  --idle-seconds 300
-```
-
 It's considered best-practice to put your webhook URL in `~/.zshrc` or similar and have it injected into the command when it's invoked.
 
 ```sh
