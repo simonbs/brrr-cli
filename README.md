@@ -48,7 +48,8 @@ Then install agent integrations with your webhook:
 
 ```sh
 brrr agent install all \
-    --webhook 'https://api.brrr.now/v1/br_your_webhook_id'
+    --webhook 'https://api.brrr.now/v1/br_your_webhook_id' \
+    --idle-seconds 300
 ```
 
 You can find your webhook in the <a href="https://brrr.now" target="_blank">brrr</a> app.
@@ -64,7 +65,7 @@ brrr agent install all \
 It's considered best-practice to put your webhook URL in `~/.zshrc` or similar and have it injected into the command when it's invoked.
 
 ```sh
-brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
+brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 ```
 
 ## 🤖 Supported Agents
@@ -78,7 +79,7 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
 
 | Command | Purpose |
 |---|---|
-| `brrr agent install <claude\|codex\|all> --webhook <value> [--idle-seconds <seconds>]` | Install or reinstall brrr-managed hooks using a `https://api.brrr.now/v1/br_*` webhook. |
+| `brrr agent install <claude\|codex\|all> --webhook <value> --idle-seconds <seconds>` | Install or reinstall brrr-managed hooks using a `https://api.brrr.now/v1/br_*` webhook. |
 | `brrr agent uninstall <claude\|codex\|all>` | Remove only brrr-managed hooks. |
 | `brrr agent status` | Show which agents are present, installed, and where config lives. |
 
@@ -87,7 +88,7 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
 Use `brrr agent install` to install or reinstall hooks for one agent or all supported agents.
 
 ```sh
-brrr agent install <claude|codex|all> --webhook <value> [--idle-seconds <seconds>]
+brrr agent install <claude|codex|all> --webhook <value> --idle-seconds <seconds>
 ```
 
 `--webhook` accepts the following forms:
@@ -109,7 +110,7 @@ Environment variables are resolved when the installed hook runs, not during inst
 Use single quotes when installing with an environment variable so your shell does not expand it too early:
 
 ```sh
-brrr agent install all --webhook '$BRRR_WEBHOOK_URL'
+brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 ```
 
 If you want the variable available in future shell sessions, add it to your shell config, for example:
@@ -120,9 +121,13 @@ export BRRR_WEBHOOK_URL='https://api.brrr.now/v1/br_your_webhook_id'
 
 #### Only Notify When Idle
 
-`--idle-seconds` is optional.
+`--idle-seconds` is required.
 
-When set, `brrr` only sends notification when the machine has been idle for at least that many seconds. In this case "idle" means means no keyboard or mouse activity for that duration.
+We recommend starting with `300`, which is a good default if you mainly want pushes when you step away from the machine.
+
+Use `0` to send the notification immediately with no idle wait. Any value above `0` means `brrr` only sends the notification when the machine has been idle for at least that many seconds. In this case "idle" means no keyboard or mouse activity for that duration.
+
+`--idle-seconds` must be a non-negative integer.
 
 ### Check Installation Status
 
@@ -151,9 +156,9 @@ brrr agent uninstall <claude|codex|all>
 ### Examples
 
 ```sh
-$ brrr agent install claude --webhook '$BRRR_WEBHOOK_URL'
+$ brrr agent install claude --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 
-$ brrr agent install codex --webhook 'https://api.brrr.now/v1/br_your_webhook_id'
+$ brrr agent install codex --webhook 'https://api.brrr.now/v1/br_your_webhook_id' --idle-seconds 300
 
 $ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 

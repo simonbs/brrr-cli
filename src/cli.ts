@@ -33,8 +33,8 @@ agent
   .command("install")
   .argument("<agent>", "claude, codex, or all")
   .requiredOption("--webhook <value>", "brrr webhook URL or env reference")
-  .option("--idle-seconds <seconds>", "Only send when macOS has been idle for at least this many seconds", parseIdleSeconds)
-  .action(async (target: string, options: { webhook: string, idleSeconds?: number }) => {
+  .requiredOption("--idle-seconds <seconds>", "Only send when macOS has been idle for at least this many seconds", parseIdleSeconds)
+  .action(async (target: string, options: { webhook: string, idleSeconds: number }) => {
     await installCommand(adapters, target, options.webhook, options.idleSeconds)
   })
 
@@ -82,12 +82,12 @@ program.parseAsync(process.argv).catch((error) => {
 
 function parseIdleSeconds(value: string): number {
   if (!/^\d+$/.test(value)) {
-    throw new Error("--idle-seconds must be a positive integer.")
+    throw new Error("--idle-seconds must be a non-negative integer.")
   }
 
   const parsed = Number(value)
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error("--idle-seconds must be a positive integer.")
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error("--idle-seconds must be a non-negative integer.")
   }
 
   return parsed
