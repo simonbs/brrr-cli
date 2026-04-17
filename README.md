@@ -1,7 +1,7 @@
 <div align="center">
   <img width="700" src="/screenshot.png" />
   <h3><strong>brrr-cli</strong> — notifications for agent CLIs using <a href="https://brrr.now" target="_blank">brrr.now</a></h3>
-  <p>Easy peasy installation of Claude Code and Codex hooks to send push notifications.</p>
+  <p>Easy peasy installation of Claude Code, Codex, and Copilot CLI hooks to send push notifications.</p>
 </div>
 
 <hr />
@@ -31,9 +31,9 @@
 ## ✨ Why?
 `brrr` installs webhook notifications for supported AI agent CLIs on macOS.
 
-The goal is simple: when Claude or Codex finishes, needs approval, or needs your input, send a push through your <a href="https://brrr.now" target="_blank">brrr</a> webhook.
+The goal is simple: when Claude, Codex, or Copilot finishes, or when Claude needs approval or your input, send a push through your <a href="https://brrr.now" target="_blank">brrr</a> webhook.
 
-It uses <a href="https://code.claude.com/docs/en/hooks" target="_blank">Claude's hooks</a> and <a href="https://developers.openai.com/codex/config-reference/" target="_blank">Codex' notify</a> to detect the agent is done. The CLI automatically modifies `~/.claude/settings.json` and `~/.codex/config.toml` to setup the hooks and commands.
+It uses <a href="https://code.claude.com/docs/en/hooks" target="_blank">Claude's hooks</a>, <a href="https://developers.openai.com/codex/config-reference/" target="_blank">Codex' notify</a>, and <a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks" target="_blank">Copilot's hooks</a> to detect the agent is done. The CLI automatically modifies `~/.claude/settings.json`, `~/.codex/config.toml`, and a repo-local Copilot hooks file at `.github/hooks/brrr-copilot.json`.
 
 ## 🚀 Getting Started
 
@@ -52,6 +52,12 @@ brrr agent install all \
     --idle-seconds 300
 ```
 
+For Copilot, run the install command from the repository where you use Copilot CLI. Copilot CLI loads hooks from the current working directory, so `brrr` writes Copilot support to `.github/hooks/brrr-copilot.json` in that repo.
+
+If `copilot` is not installed, `brrr agent install all` skips the Copilot hook instead of failing.
+
+The generated Copilot hook is portable across contributors: it calls `brrr` from `PATH`, and if `brrr` is not installed on a given machine, the hook exits successfully without doing anything.
+
 You can find your webhook in the <a href="https://brrr.now" target="_blank">brrr</a> app.
 
 It's considered best-practice to put your webhook URL in `~/.zshrc` or similar and have it injected into the command when it's invoked.
@@ -62,17 +68,18 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 
 ## 🤖 Supported Agents
 
-| Agent       | Auto-Install | Config                    | Hooks                                                                         |
-|-------------|:------------:|---------------------------|-------------------------------------------------------------------------------|
-| Claude Code | ✅           | `~/.claude/settings.json` | `Stop`, `Notification(permission_prompt)`, and `PreToolUse(AskUserQuestion)`. |
-| Codex       | ✅           | `~/.codex/config.toml`    | `notify`                                                                      |
+| Agent       | Auto-Install | Config                             | Hooks                                                                         |
+|-------------|:------------:|------------------------------------|-------------------------------------------------------------------------------|
+| Claude Code | ✅           | `~/.claude/settings.json`          | `Stop`, `Notification(permission_prompt)`, and `PreToolUse(AskUserQuestion)`. |
+| Codex       | ✅           | `~/.codex/config.toml`             | `notify`                                                                      |
+| Copilot     | ✅           | `.github/hooks/brrr-copilot.json`  | `agentStop` and `errorOccurred`                                               |
 
 ## 🧭 Usage
 
 | Command | Purpose |
 |---|---|
-| `brrr agent install <claude\|codex\|all> --webhook <value> --idle-seconds <seconds>` | Install or reinstall hooks using a `https://api.brrr.now/v1/br_*` webhook. |
-| `brrr agent uninstall <claude\|codex\|all>` | Remove only brrr-managed hooks. |
+| `brrr agent install <claude\|codex\|copilot\|all> --webhook <value> --idle-seconds <seconds>` | Install or reinstall hooks using a `https://api.brrr.now/v1/br_*` webhook. |
+| `brrr agent uninstall <claude\|codex\|copilot\|all>` | Remove only brrr-managed hooks. |
 | `brrr agent status` | Show which agents are present, installed, and where config lives. |
 
 ### Install Hooks
@@ -80,7 +87,7 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 Use `brrr agent install` to install or reinstall hooks for one agent or all supported agents.
 
 ```sh
-brrr agent install <claude|codex|all> --webhook <value> --idle-seconds <seconds>
+brrr agent install <claude|codex|copilot|all> --webhook <value> --idle-seconds <seconds>
 ```
 
 `--webhook` accepts the following forms:
@@ -135,6 +142,7 @@ Example output:
 Agent     Present Installed Idle    Config
 claude    yes     yes       300s    ~/.claude/settings.json
 codex     yes     yes       300s    ~/.codex/config.toml
+copilot   yes     yes       300s    /path/to/repo/.github/hooks/brrr-copilot.json
 ```
 
 ### Remove Hooks
@@ -142,7 +150,7 @@ codex     yes     yes       300s    ~/.codex/config.toml
 Use `brrr agent uninstall` to remove only the hooks managed by `brrr`.
 
 ```sh
-brrr agent uninstall <claude|codex|all>
+brrr agent uninstall <claude|codex|copilot|all>
 ```
 
 ### Examples
@@ -152,12 +160,15 @@ $ brrr agent install claude --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 
 $ brrr agent install codex --webhook 'https://api.brrr.now/v1/br_your_webhook_id' --idle-seconds 300
 
+$ brrr agent install copilot --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
+
 $ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 
 $ brrr agent status
 Agent     Present Installed Idle    Config
 claude    yes     yes       300s    ~/.claude/settings.json
 codex     yes     yes       300s    ~/.codex/config.toml
+copilot   yes     yes       300s    /path/to/repo/.github/hooks/brrr-copilot.json
 
 $ brrr agent uninstall codex
 ```

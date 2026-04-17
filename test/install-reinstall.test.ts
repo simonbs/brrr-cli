@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
 
 const originalHome = process.env.HOME
+const originalCwd = process.cwd()
 
 afterEach(() => {
   if (originalHome === undefined) {
@@ -12,6 +13,8 @@ afterEach(() => {
   } else {
     process.env.HOME = originalHome
   }
+
+  process.chdir(originalCwd)
 })
 
 describe("install command behavior", () => {
@@ -49,5 +52,23 @@ describe("install command behavior", () => {
     expect(second.changed).toBe(true)
     expect(second.backupPath).toContain(".brrr-backup-")
     expect(await readFile(getCodexConfigPath(), "utf8")).toContain("notify = [")
+  })
+
+  test("copilot install reinstalls when brrr hooks already exist", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "brrr-copilot-repo-"))
+    process.chdir(repo)
+    vi.resetModules()
+
+    const { installCopilot, getCopilotConfigPath } = await import("../src/agent/config/copilot-config.js")
+
+    const first = await installCopilot({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
+    const second = await installCopilot({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
+
+    expect(first.message).toBe("installed")
+    expect(first.backupPath).toBeUndefined()
+    expect(second.message).toBe("reinstalled")
+    expect(second.changed).toBe(true)
+    expect(second.backupPath).toBeUndefined()
+    expect(await readFile(getCopilotConfigPath(), "utf8")).toContain("\"agentStop\"")
   })
 })

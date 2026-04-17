@@ -4,11 +4,12 @@ import { sendWebhook } from "../../agent/transport/webhook.js"
 import { parseWebhookRef } from "../../agent/webhook-ref.js"
 import { buildClaudeApprovalPayload, buildClaudeFinishedPayload } from "../../agent/config/claude-settings.js"
 import { buildCodexFinishedPayload } from "../../agent/config/codex-config.js"
+import { buildCopilotErrorPayload, buildCopilotFinishedPayload } from "../../agent/config/copilot-config.js"
 import { shouldSkipNotificationForIdleThreshold } from "../../agent/idle.js"
 
 export interface DispatchOptions {
-  agent: "claude" | "codex"
-  event: "finished" | "needs-approval"
+  agent: "claude" | "codex" | "copilot"
+  event: "finished" | "needs-approval" | "error"
   webhook: string
   idleSeconds?: number
   payloadJson?: string
@@ -17,6 +18,9 @@ export interface DispatchOptions {
 export async function dispatchCommand(options: DispatchOptions): Promise<void> {
   const webhookRef = parseWebhookRef(options.webhook)
   const payload = await buildDispatchPayload(options)
+  if (!payload) {
+    return
+  }
   if (await shouldSkipNotificationForIdleThreshold(options.idleSeconds)) {
     return
   }
@@ -26,7 +30,7 @@ export async function dispatchCommand(options: DispatchOptions): Promise<void> {
   }
 }
 
-async function buildDispatchPayload(options: DispatchOptions): Promise<SendPayload> {
+async function buildDispatchPayload(options: DispatchOptions): Promise<SendPayload | undefined> {
   if (options.agent === "claude") {
     const input = JSON.parse(await readStdin()) as ClaudePayload
     if (options.event === "needs-approval") {
@@ -39,6 +43,17 @@ async function buildDispatchPayload(options: DispatchOptions): Promise<SendPaylo
       input.cwd,
       input.last_assistant_message?.trim() || (input.stop_hook_active ? undefined : input.message)
     )
+  }
+
+  if (options.agent === "copilot") {
+    const input = JSON.parse(await readStdin()) as CopilotPayload
+    if (options.event === "error") {
+      return buildCopilotErrorPayload(input.cwd, input.error?.message)
+    }
+
+    return input.reason === undefined || input.reason === "complete"
+      ? buildCopilotFinishedPayload(input.cwd)
+      : undefined
   }
 
   if (!options.payloadJson) {
@@ -69,6 +84,14 @@ interface ClaudePayload {
 interface CodexPayload {
   cwd?: string
   "last-assistant-message"?: string | null
+}
+
+interface CopilotPayload {
+  cwd?: string
+  reason?: "complete" | "error" | "abort" | "timeout" | "user_exit"
+  error?: {
+    message?: string
+  }
 }
 
 function extractClaudeNeedsAttentionMessage(toolName?: string, toolInput?: unknown): string | undefined {

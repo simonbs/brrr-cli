@@ -1,8 +1,8 @@
 import type { WebhookRef } from "../webhook-ref.js"
 import type { SendPayload } from "../transport/payload.js"
 
-export type SupportedAgent = "claude" | "codex"
-export type InstalledEvent = "finished" | "needs-approval"
+export type SupportedAgent = "claude" | "codex" | "copilot"
+export type InstalledEvent = "finished" | "needs-approval" | "error"
 export type ManualEvent = "finished" | "needs-approval" | "error"
 
 export interface AgentInstallState {
