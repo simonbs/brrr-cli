@@ -3,9 +3,11 @@ import { mkdtemp, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
+import { addFakeCommandToPath } from "./helpers/fake-command.js"
 
 const originalHome = process.env.HOME
 const originalCwd = process.cwd()
+const originalPath = process.env.PATH
 
 afterEach(() => {
   if (originalHome === undefined) {
@@ -15,6 +17,11 @@ afterEach(() => {
   }
 
   process.chdir(originalCwd)
+  if (originalPath === undefined) {
+    delete process.env.PATH
+  } else {
+    process.env.PATH = originalPath
+  }
 })
 
 describe("install command behavior", () => {
@@ -57,6 +64,7 @@ describe("install command behavior", () => {
   test("copilot install reinstalls when brrr hooks already exist", async () => {
     const repo = await mkdtemp(join(tmpdir(), "brrr-copilot-repo-"))
     process.chdir(repo)
+    await addFakeCommandToPath("copilot")
     vi.resetModules()
 
     const { installCopilot, getCopilotConfigPath } = await import("../src/agent/config/copilot-config.js")

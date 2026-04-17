@@ -7,6 +7,7 @@ import {
   buildCopilotErrorPayload,
   buildCopilotFinishedPayload
 } from "../src/agent/config/copilot-config.js"
+import { addFakeCommandToPath } from "./helpers/fake-command.js"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
 
 const originalCwd = process.cwd()
@@ -88,6 +89,7 @@ describe("copilot config generation", () => {
   test("uses the current working directory for the Copilot hooks file", async () => {
     const repo = await mkdtemp(join(tmpdir(), "brrr-copilot-repo-"))
     process.chdir(repo)
+    await addFakeCommandToPath("copilot")
     vi.resetModules()
 
     const { installCopilot, getCopilotConfigPath } = await import("../src/agent/config/copilot-config.js")
