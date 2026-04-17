@@ -48,8 +48,8 @@ Then install agent integrations with your webhook:
 
 ```sh
 brrr agent install all \
-    --webhook 'https://api.brrr.now/v1/br_your_webhook_id' \
-    --idle-seconds 300
+  --webhook 'https://api.brrr.now/v1/br_your_webhook_id' \
+  --idle-seconds 300
 ```
 
 For Copilot, run the install command from the repository where you use Copilot CLI. Copilot CLI loads hooks from the current working directory, so `brrr` writes Copilot support to `.github/hooks/brrr-copilot.json` in that repo.
