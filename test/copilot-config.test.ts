@@ -48,6 +48,10 @@ describe("copilot config generation", () => {
       title: "Copilot finished",
       message: "Copilot finished working in 'project'."
     })
+    expect(buildCopilotFinishedPayload("/tmp/project", "Done")).toEqual({
+      title: "Copilot finished",
+      message: "Done"
+    })
     expect(buildCopilotErrorPayload("/tmp/project", "Boom")).toEqual({
       title: "Copilot error",
       message: "Boom"

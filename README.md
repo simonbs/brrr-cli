@@ -58,6 +58,8 @@ If `copilot` is not installed, `brrr agent install all` skips the Copilot hook i
 
 The generated Copilot hook is portable across contributors: it calls `brrr` from `PATH`, and if `brrr` is not installed on a given machine, the hook exits successfully without doing anything.
 
+For Copilot turn-end notifications, `brrr` sends the latest Copilot reply when it can recover it, and falls back to a generic "Copilot finished working in..." notification when it cannot.
+
 You can find your webhook in the <a href="https://brrr.now" target="_blank">brrr</a> app.
 
 It's considered best-practice to put your webhook URL in `~/.zshrc` or similar and have it injected into the command when it's invoked.

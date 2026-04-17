@@ -51,8 +51,8 @@ async function buildDispatchPayload(options: DispatchOptions): Promise<SendPaylo
       return buildCopilotErrorPayload(input.cwd, input.error?.message)
     }
 
-    return input.reason === undefined || input.reason === "complete"
-      ? buildCopilotFinishedPayload(input.cwd)
+    return shouldSendCopilotFinishedNotification(input)
+      ? buildCopilotFinishedPayload(input.cwd, await extractCopilotFinishedMessage(input))
       : undefined
   }
 
@@ -89,8 +89,90 @@ interface CodexPayload {
 interface CopilotPayload {
   cwd?: string
   reason?: "complete" | "error" | "abort" | "timeout" | "user_exit"
+  stopReason?: string
+  transcriptPath?: string
+  message?: string
+  response?: string
+  summary?: string
+  output?: string
+  text?: string
+  last_assistant_message?: string
+  agent?: {
+    message?: string
+    response?: string
+    summary?: string
+    output?: string
+    text?: string
+  }
+  result?: {
+    message?: string
+    response?: string
+    summary?: string
+    output?: string
+    text?: string
+  }
   error?: {
     message?: string
+  }
+}
+
+async function extractCopilotFinishedMessage(input: CopilotPayload): Promise<string | undefined> {
+  return input.last_assistant_message?.trim()
+    || input.message?.trim()
+    || input.response?.trim()
+    || input.summary?.trim()
+    || input.output?.trim()
+    || input.text?.trim()
+    || readObjectStringField(input.agent, "message")
+    || readObjectStringField(input.agent, "response")
+    || readObjectStringField(input.agent, "summary")
+    || readObjectStringField(input.agent, "output")
+    || readObjectStringField(input.agent, "text")
+    || readObjectStringField(input.result, "message")
+    || readObjectStringField(input.result, "response")
+    || readObjectStringField(input.result, "summary")
+    || readObjectStringField(input.result, "output")
+    || readObjectStringField(input.result, "text")
+    || await readCopilotTranscriptMessage(input.transcriptPath)
+}
+
+function shouldSendCopilotFinishedNotification(input: CopilotPayload): boolean {
+  if (input.stopReason !== undefined) {
+    return input.stopReason === "end_turn"
+  }
+
+  return input.reason === undefined || input.reason === "complete"
+}
+
+async function readCopilotTranscriptMessage(transcriptPath: string | undefined): Promise<string | undefined> {
+  if (!transcriptPath) return undefined
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const transcript = await readFile(transcriptPath, "utf8")
+      const lines = transcript.split("\n").map((line) => line.trim()).filter(Boolean)
+
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        let event: CopilotTranscriptEvent
+        try {
+          event = JSON.parse(lines[index]) as CopilotTranscriptEvent
+        } catch {
+          continue
+        }
+
+        if (event.type !== "assistant.message") continue
+
+        const content = event.data?.content?.trim()
+        if (content) return content
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`brrr hook transcript read failed: ${message}`)
+    }
+
+    if (attempt < 2) {
+      await delay(50)
+    }
   }
 }
 
@@ -111,4 +193,22 @@ function readStringField(value: object, key: string): string | undefined {
   return typeof candidate === "string" && candidate.trim().length > 0
     ? candidate.trim()
     : undefined
+}
+
+function readObjectStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  return readStringField(value, key)
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
+}
+
+interface CopilotTranscriptEvent {
+  type?: string
+  data?: {
+    content?: string
+  }
 }

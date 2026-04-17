@@ -131,13 +131,13 @@ export function getCopilotConfigPath(): string {
   return join(process.cwd(), ".github", "hooks", "brrr-copilot.json")
 }
 
-export function buildCopilotFinishedPayload(cwd?: string): { title: string, subtitle?: string, message: string } {
+export function buildCopilotFinishedPayload(cwd?: string, summary?: string): { title: string, subtitle?: string, message: string } {
   const projectName = cwd ? basename(cwd) : undefined
   return {
     title: "Copilot finished",
-    message: projectName
+    message: summary?.trim() || (projectName
       ? `Copilot finished working in '${projectName}'.`
-      : "Copilot finished working."
+      : "Copilot finished working.")
   }
 }
 
