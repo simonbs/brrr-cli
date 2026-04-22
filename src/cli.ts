@@ -8,7 +8,7 @@ import { installCommand } from "./commands/agent/install.js"
 import { uninstallCommand } from "./commands/agent/uninstall.js"
 import { statusCommand } from "./commands/agent/status.js"
 import { dispatchCommand } from "./commands/agent/dispatch.js"
-import { getCliVersion } from "./utils/version.js"
+import { VERSION } from "./generated/version.js"
 
 const adapters = [new ClaudeAdapter(), new CodexAdapter(), new CopilotAdapter()]
 const program = new Command()
@@ -27,7 +27,7 @@ const helpBanner = colorizeHelpText(`${banner}\n\n`)
 program
   .name("brrr")
   .description("Agent notifications for brrr")
-  .version(getCliVersion())
+  .version(VERSION)
   .addHelpText("beforeAll", helpBanner)
 
 const agent = program.command("agent").description("Manage AI agent webhook integrations")

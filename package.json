@@ -7,9 +7,9 @@
     "brrr": "./dist/src/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x dist/src/cli.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "build": "node scripts/generate-version.mjs && tsc -p tsconfig.json && chmod +x dist/src/cli.js",
+    "typecheck": "node scripts/generate-version.mjs && tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/generate-version.mjs && vitest run"
   },
   "engines": {
     "node": ">=20"
