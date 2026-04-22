@@ -31,12 +31,15 @@ export async function readCodexInstallState(): Promise<AgentInstallState> {
 export async function installCodex(options: InstallOptions): Promise<InstallResult> {
   const currentText = (await readTextFileIfExists(configPath)) ?? ""
   const wasInstalled = extractManagedBlock(currentText) !== null
-  if (hasForeignNotify(currentText)) {
-    throw new Error("Codex already has a non-brrr notify configuration. Remove it or migrate it manually.")
-  }
+  const currentBlock = extractManagedBlock(currentText)
+  const preservedNotify = currentBlock ? extractOriginalNotifyFromCodexBlock(currentBlock) : undefined
+  const textWithoutBlock = removeManagedBlock(currentText)
+  const existingNotify = extractNotifyAssignment(textWithoutBlock)
+  const originalNotify = existingNotify?.args ?? preservedNotify
+  const cleanedText = existingNotify ? removeNotifyAssignment(textWithoutBlock, existingNotify) : textWithoutBlock
 
-  const nextBlock = buildCodexManagedBlock(options.webhook, options.idleSeconds)
-  const nextText = upsertManagedBlock(currentText, nextBlock)
+  const nextBlock = buildCodexManagedBlock(options.webhook, options.idleSeconds, originalNotify)
+  const nextText = upsertManagedBlock(cleanedText, nextBlock)
   const backupPath = await maybeCreateBackup(configPath)
   await writeTextFile(configPath, nextText)
   return {
@@ -48,7 +51,12 @@ export async function installCodex(options: InstallOptions): Promise<InstallResu
 
 export async function uninstallCodex(): Promise<UninstallResult> {
   const currentText = (await readTextFileIfExists(configPath)) ?? ""
-  const nextText = removeManagedBlock(currentText)
+  const block = extractManagedBlock(currentText)
+  const originalNotify = block ? extractOriginalNotifyFromCodexBlock(block) : undefined
+  const textWithoutBlock = removeManagedBlock(currentText)
+  const nextText = originalNotify
+    ? upsertTopLevelNotify(textWithoutBlock, originalNotify)
+    : textWithoutBlock
   if (normalizeText(currentText) === normalizeText(nextText)) {
     return { changed: false, message: "not installed" }
   }
@@ -58,7 +66,11 @@ export async function uninstallCodex(): Promise<UninstallResult> {
   return { changed: true, backupPath, message: "uninstalled" }
 }
 
-export function buildCodexManagedBlock(webhook: InstallOptions["webhook"], idleSeconds?: number): string {
+export function buildCodexManagedBlock(
+  webhook: InstallOptions["webhook"],
+  idleSeconds?: number,
+  originalNotify?: string[]
+): string {
   const notifyArgs = [
     "brrr",
     "agent",
@@ -75,6 +87,7 @@ export function buildCodexManagedBlock(webhook: InstallOptions["webhook"], idleS
 
   return [
     BLOCK_START,
+    ...(originalNotify ? [`# brrr original notify json: ${JSON.stringify(originalNotify)}`] : []),
     `notify = [${notifyArgs.map(toTomlString).join(", ")}]`,
     BLOCK_END
   ].join("\n")
@@ -103,10 +116,18 @@ function extractIdleSecondsFromCodexBlock(block: string): number | undefined {
   return rawMatch ? Number(rawMatch[1]) : undefined
 }
 
-function hasForeignNotify(text: string): boolean {
-  if (!text.trim()) return false
-  const strippedManaged = removeManagedBlock(text)
-  return /^\s*notify\s*=/m.test(strippedManaged)
+function extractOriginalNotifyFromCodexBlock(block: string): string[] | undefined {
+  const match = block.match(/^# brrr original notify json: (.+)$/m)
+  if (!match) return undefined
+  try {
+    const parsed = JSON.parse(match[1]) as unknown
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+      return undefined
+    }
+    return parsed
+  } catch {
+    return undefined
+  }
 }
 
 function upsertManagedBlock(currentText: string, nextBlock: string): string {
@@ -142,6 +163,23 @@ function removeManagedBlock(text: string): string {
   return `${text.replace(existing, "").trimEnd()}\n`.replace(/^\s+$/g, "")
 }
 
+function upsertTopLevelNotify(currentText: string, notifyArgs: string[]): string {
+  const notifyLine = `notify = [${notifyArgs.map(toTomlString).join(", ")}]`
+  const trimmed = currentText.trimEnd()
+  if (!trimmed) return `${notifyLine}\n`
+
+  const firstTableMatch = trimmed.match(/^\s*\[/m)
+  if (!firstTableMatch || firstTableMatch.index === undefined) {
+    return `${trimmed}\n\n${notifyLine}\n`
+  }
+
+  const index = firstTableMatch.index
+  const prefix = trimmed.slice(0, index).trimEnd()
+  const suffix = trimmed.slice(index).replace(/^\n+/, "")
+  const parts = [prefix, notifyLine, suffix].filter((part) => part.length > 0)
+  return `${parts.join("\n\n")}\n`
+}
+
 function extractManagedBlock(text: string): string | null {
   const start = text.indexOf(BLOCK_START)
   if (start === -1) return null
@@ -166,6 +204,77 @@ async function maybeCreateBackup(path: string): Promise<string | undefined> {
 
 function escapeDoubleQuoted(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")
+}
+
+function extractNotifyAssignment(text: string): { start: number, end: number, args: string[] } | null {
+  const match = text.match(/^\s*notify\s*=\s*\[/m)
+  if (!match || match.index === undefined) return null
+
+  const start = match.index
+  const openBracketIndex = start + match[0].lastIndexOf("[")
+  let index = openBracketIndex + 1
+  let inString = false
+  let escaping = false
+
+  for (; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escaping) {
+        escaping = false
+        continue
+      }
+      if (char === "\\") {
+        escaping = true
+        continue
+      }
+      if (char === "\"") {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === "\"") {
+      inString = true
+      continue
+    }
+
+    if (char === "]") {
+      const end = includeTrailingNewline(text, index + 1)
+      const assignment = text.slice(start, index + 1)
+      const args = parseNotifyArgs(assignment)
+      return args ? { start, end, args } : null
+    }
+  }
+
+  return null
+}
+
+function parseNotifyArgs(assignment: string): string[] | null {
+  const start = assignment.indexOf("[")
+  const end = assignment.lastIndexOf("]")
+  if (start === -1 || end === -1 || end <= start) return null
+
+  const arrayLiteral = assignment.slice(start, end + 1)
+  try {
+    const parsed = JSON.parse(arrayLiteral) as unknown
+    if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== "string")) {
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function removeNotifyAssignment(
+  text: string,
+  assignment: { start: number, end: number, args: string[] }
+): string {
+  return `${text.slice(0, assignment.start)}${text.slice(assignment.end)}`.trimEnd() + "\n"
+}
+
+function includeTrailingNewline(text: string, index: number): number {
+  return text[index] === "\n" ? index + 1 : index
 }
 
 function normalizeText(value: string): string {
