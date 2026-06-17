@@ -41,6 +41,7 @@ Install with Homebrew:
 
 ```sh
 brew tap simonbs/brrr-cli https://github.com/simonbs/brrr-cli.git
+brew trust simonbs/brrr-cli
 brew install brrr
 ```
 
