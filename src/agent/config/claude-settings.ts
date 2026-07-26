@@ -6,6 +6,8 @@ import type { AgentInstallState, InstallOptions, InstallResult, UninstallResult 
 import { stringifyWebhookRef } from "../webhook-ref.js"
 import { commandExists } from "../../utils/shell.js"
 import { getCliInvocationArgs } from "../../utils/cli.js"
+import { getAgentIconUrl } from "../icons.js"
+import type { SendPayload } from "../transport/payload.js"
 
 const configPath = join(homedir(), ".claude", "settings.json")
 const STOP_MARKER = "brrr:claude:stop:v1"
@@ -289,22 +291,24 @@ async function maybeCreateBackup(path: string): Promise<string | undefined> {
   return createBackup(path)
 }
 
-export function buildClaudeFinishedPayload(cwd?: string, summary?: string): { title: string; subtitle?: string; message: string } {
+export function buildClaudeFinishedPayload(cwd?: string, summary?: string): SendPayload {
   const projectName = cwd ? basename(cwd) : undefined
   return {
     title: "Claude finished",
     message: summary?.trim() || (projectName
       ? `Claude finished working in '${projectName}'.`
-      : "Claude finished working.")
+      : "Claude finished working."),
+    icon_url: getAgentIconUrl("claude")
   }
 }
 
-export function buildClaudeApprovalPayload(cwd?: string, message?: string): { title: string; subtitle?: string; message: string } {
+export function buildClaudeApprovalPayload(cwd?: string, message?: string): SendPayload {
   const projectName = cwd ? basename(cwd) : undefined
   return {
     title: "Claude needs approval",
     message: message?.trim() || (projectName
       ? `Claude is waiting for your input in '${projectName}'.`
-      : "Claude is waiting for your input.")
+      : "Claude is waiting for your input."),
+    icon_url: getAgentIconUrl("claude")
   }
 }

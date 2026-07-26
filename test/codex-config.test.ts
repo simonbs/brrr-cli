@@ -5,6 +5,7 @@ import {
   extractWebhookFromCodexBlock
 } from "../src/agent/config/codex-config.js"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
+import { getAgentIconUrl } from "../src/agent/icons.js"
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -55,7 +56,8 @@ describe("codex config generation", () => {
   test("builds default notification text", () => {
     expect(buildCodexFinishedPayload("/tmp/project", "Done")).toEqual({
       title: "Codex finished",
-      message: "Done"
+      message: "Done",
+      icon_url: getAgentIconUrl("codex")
     })
   })
 

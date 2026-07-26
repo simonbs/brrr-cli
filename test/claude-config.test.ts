@@ -5,6 +5,7 @@ import {
   buildClaudeFinishedPayload
 } from "../src/agent/config/claude-settings.js"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
+import { getAgentIconUrl } from "../src/agent/icons.js"
 
 describe("claude config generation", () => {
   test("generates finished hook command", () => {
@@ -34,11 +35,13 @@ describe("claude config generation", () => {
   test("builds default notification text", () => {
     expect(buildClaudeFinishedPayload("/tmp/project", "Done")).toEqual({
       title: "Claude finished",
-      message: "Done"
+      message: "Done",
+      icon_url: getAgentIconUrl("claude")
     })
     expect(buildClaudeApprovalPayload("/tmp/project")).toEqual({
       title: "Claude needs approval",
-      message: "Claude is waiting for your input in 'project'."
+      message: "Claude is waiting for your input in 'project'.",
+      icon_url: getAgentIconUrl("claude")
     })
   })
 })

@@ -33,6 +33,8 @@
 
 The goal is simple: when Claude, Codex, or Copilot finishes, or when Claude needs approval or your input, send a push through your <a href="https://brrr.now" target="_blank">brrr</a> webhook.
 
+Each notification carries the icon of the agent that sent it, so you can tell Claude, Codex, and Copilot pushes apart at a glance. brrr shows it in place of the app icon on iPhone and iPad.
+
 It uses <a href="https://code.claude.com/docs/en/hooks" target="_blank">Claude's hooks</a>, <a href="https://developers.openai.com/codex/config-reference/" target="_blank">Codex' notify</a>, and <a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks" target="_blank">Copilot's hooks</a> to detect the agent is done. The CLI automatically modifies `~/.claude/settings.json`, `~/.codex/config.toml`, and a repo-local Copilot hooks file at `.github/hooks/brrr-copilot.json`.
 
 ## 🚀 Getting Started

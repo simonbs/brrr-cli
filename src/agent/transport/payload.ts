@@ -6,6 +6,7 @@ export interface SendPayload {
   sound?: string
   open_url?: string
   image_url?: string
+  icon_url?: string
 }
 
 export function buildPayload(
@@ -18,5 +19,6 @@ export function buildPayload(
   if (payload.sound) body.sound = payload.sound
   if (payload.open_url) body.open_url = payload.open_url
   if (payload.image_url) body.image_url = payload.image_url
+  if (payload.icon_url) body.icon_url = payload.icon_url
   return body
 }

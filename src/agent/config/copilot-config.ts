@@ -5,6 +5,8 @@ import { readTextFileIfExists, writeTextFile } from "../../utils/fs.js"
 import type { AgentInstallState, InstallOptions, InstallResult, UninstallResult } from "../adapters/types.js"
 import { stringifyWebhookRef } from "../webhook-ref.js"
 import { commandExists } from "../../utils/shell.js"
+import { getAgentIconUrl } from "../icons.js"
+import type { SendPayload } from "../transport/payload.js"
 
 const AGENT_STOP_MARKER = "brrr:copilot:agent-stop:v1"
 const LEGACY_SESSION_END_MARKER = "brrr:copilot:session-end:v1"
@@ -131,23 +133,25 @@ export function getCopilotConfigPath(): string {
   return join(process.cwd(), ".github", "hooks", "brrr-copilot.json")
 }
 
-export function buildCopilotFinishedPayload(cwd?: string, summary?: string): { title: string, subtitle?: string, message: string } {
+export function buildCopilotFinishedPayload(cwd?: string, summary?: string): SendPayload {
   const projectName = cwd ? basename(cwd) : undefined
   return {
     title: "Copilot finished",
     message: summary?.trim() || (projectName
       ? `Copilot finished working in '${projectName}'.`
-      : "Copilot finished working.")
+      : "Copilot finished working."),
+    icon_url: getAgentIconUrl("copilot")
   }
 }
 
-export function buildCopilotErrorPayload(cwd?: string, errorMessage?: string): { title: string, subtitle?: string, message: string } {
+export function buildCopilotErrorPayload(cwd?: string, errorMessage?: string): SendPayload {
   const projectName = cwd ? basename(cwd) : undefined
   return {
     title: "Copilot error",
     message: errorMessage?.trim() || (projectName
       ? `Copilot hit an error in '${projectName}'.`
-      : "Copilot hit an error.")
+      : "Copilot hit an error."),
+    icon_url: getAgentIconUrl("copilot")
   }
 }
 

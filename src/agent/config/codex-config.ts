@@ -5,6 +5,8 @@ import { readTextFileIfExists, writeTextFile } from "../../utils/fs.js"
 import type { AgentInstallState, InstallOptions, InstallResult, UninstallResult } from "../adapters/types.js"
 import { stringifyWebhookRef } from "../webhook-ref.js"
 import { commandExists } from "../../utils/shell.js"
+import { getAgentIconUrl } from "../icons.js"
+import type { SendPayload } from "../transport/payload.js"
 
 const configPath = join(homedir(), ".codex", "config.toml")
 const BLOCK_START = "# brrr agent integration start"
@@ -285,12 +287,13 @@ function toTomlString(value: string): string {
   return `"${escapeDoubleQuoted(value)}"`
 }
 
-export function buildCodexFinishedPayload(cwd?: string, lastAssistantMessage?: string): { title: string; subtitle?: string; message: string } {
+export function buildCodexFinishedPayload(cwd?: string, lastAssistantMessage?: string): SendPayload {
   const projectName = cwd ? basename(cwd) : undefined
   return {
     title: "Codex finished",
     message: lastAssistantMessage?.trim() || (projectName
       ? `Codex finished working in '${projectName}'.`
-      : "Codex finished a turn.")
+      : "Codex finished a turn."),
+    icon_url: getAgentIconUrl("codex")
   }
 }

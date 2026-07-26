@@ -35,6 +35,24 @@ describe("webhook transport", () => {
     }))
   })
 
+  test("forwards the icon url", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 202,
+      json: async () => ({ success: true })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await sendWebhook(parseWebhookRef("https://api.brrr.now/v1/br_test"), {
+      message: "hello",
+      icon_url: "https://example.com/icon.png"
+    }, "interactive")
+
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({
+      message: "hello",
+      icon_url: "https://example.com/icon.png"
+    }))
+  })
+
   test("reports failure payloads", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       status: 400,

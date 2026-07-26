@@ -9,6 +9,7 @@ import {
 } from "../src/agent/config/copilot-config.js"
 import { addFakeCommandToPath } from "./helpers/fake-command.js"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
+import { getAgentIconUrl } from "../src/agent/icons.js"
 
 const originalCwd = process.cwd()
 const originalPath = process.env.PATH
@@ -47,15 +48,18 @@ describe("copilot config generation", () => {
   test("builds default notification text", () => {
     expect(buildCopilotFinishedPayload("/tmp/project")).toEqual({
       title: "Copilot finished",
-      message: "Copilot finished working in 'project'."
+      message: "Copilot finished working in 'project'.",
+      icon_url: getAgentIconUrl("copilot")
     })
     expect(buildCopilotFinishedPayload("/tmp/project", "Done")).toEqual({
       title: "Copilot finished",
-      message: "Done"
+      message: "Done",
+      icon_url: getAgentIconUrl("copilot")
     })
     expect(buildCopilotErrorPayload("/tmp/project", "Boom")).toEqual({
       title: "Copilot error",
-      message: "Boom"
+      message: "Boom",
+      icon_url: getAgentIconUrl("copilot")
     })
   })
 
