@@ -287,7 +287,19 @@ function toTomlString(value: string): string {
   return `"${escapeDoubleQuoted(value)}"`
 }
 
-export function buildCodexFinishedPayload(cwd?: string, lastAssistantMessage?: string): SendPayload {
+export function buildCodexFinishedPayload(cwd?: string): SendPayload
+export function buildCodexFinishedPayload(
+  cwd: string | undefined,
+  lastAssistantMessage: string | null | undefined
+): SendPayload | undefined
+export function buildCodexFinishedPayload(
+  cwd?: string,
+  lastAssistantMessage?: string | null
+): SendPayload | undefined {
+  if (shouldSkipCodexFinishedMessage(lastAssistantMessage)) {
+    return undefined
+  }
+
   const projectName = cwd ? basename(cwd) : undefined
   return {
     title: "Codex finished",
@@ -295,5 +307,22 @@ export function buildCodexFinishedPayload(cwd?: string, lastAssistantMessage?: s
       ? `Codex finished working in '${projectName}'.`
       : "Codex finished a turn."),
     icon_url: getAgentIconUrl("codex")
+  }
+}
+
+function shouldSkipCodexFinishedMessage(message?: string | null): boolean {
+  const trimmed = message?.trim()
+  if (!trimmed || !trimmed.startsWith("{")) return false
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false
+    }
+
+    const keys = Object.keys(parsed)
+    return keys.length === 1 && typeof (parsed as Record<string, unknown>).title === "string"
+  } catch {
+    return false
   }
 }

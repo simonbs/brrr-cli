@@ -61,6 +61,18 @@ describe("codex config generation", () => {
     })
   })
 
+  test("skips title-only Codex assistant JSON", () => {
+    expect(buildCodexFinishedPayload("/tmp/project", "{\"title\":\"Fix duplicate shared text\"}")).toBeUndefined()
+  })
+
+  test("keeps Codex assistant messages that only look like JSON", () => {
+    expect(buildCodexFinishedPayload("/tmp/project", "{\"summary\":\"Done\"}")).toEqual({
+      title: "Codex finished",
+      message: "{\"summary\":\"Done\"}",
+      icon_url: getAgentIconUrl("codex")
+    })
+  })
+
   test("installs notify at top level before existing tables", async () => {
     const home = await mkdtemp(join(tmpdir(), "brrr-codex-home-"))
     process.env.HOME = home
