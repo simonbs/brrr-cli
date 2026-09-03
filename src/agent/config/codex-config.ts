@@ -46,6 +46,8 @@ export async function readCodexInstallState(): Promise<AgentInstallState> {
     hooksConfig,
     "PermissionRequest",
     undefined,
+    PERMISSION_REQUEST_MARKER
+  )
   const installed = block !== null || !!permissionRequestCommand
   return {
     agent: "codex",
