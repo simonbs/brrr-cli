@@ -1,8 +1,15 @@
-import { readFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import type { SendPayload } from "../../agent/transport/payload.js"
 import { sendWebhook } from "../../agent/transport/webhook.js"
 import { parseWebhookRef } from "../../agent/webhook-ref.js"
-import { buildClaudeApprovalPayload, buildClaudeFinishedPayload } from "../../agent/config/claude-settings.js"
+import {
+  buildClaudeApprovalPayload,
+  buildClaudeErrorPayload,
+  buildClaudeFinishedPayload
+} from "../../agent/config/claude-settings.js"
 import { buildCodexFinishedPayload } from "../../agent/config/codex-config.js"
 import { buildCopilotErrorPayload, buildCopilotFinishedPayload } from "../../agent/config/copilot-config.js"
 import { shouldSkipNotificationForIdleThreshold } from "../../agent/idle.js"
@@ -17,43 +24,71 @@ export interface DispatchOptions {
 
 export async function dispatchCommand(options: DispatchOptions): Promise<void> {
   const webhookRef = parseWebhookRef(options.webhook)
-  const payload = await buildDispatchPayload(options)
-  if (!payload) {
+  const dispatchPayload = await buildDispatchPayload(options)
+  if (!dispatchPayload) {
     return
   }
   if (await shouldSkipNotificationForIdleThreshold(options.idleSeconds)) {
     return
   }
-  const result = await sendWebhook(webhookRef, payload, "hook")
+  const result = await sendWebhook(webhookRef, dispatchPayload.payload, "hook")
+  if (result.ok) {
+    await dispatchPayload.afterSend?.()
+  }
   if (!result.ok && result.error) {
     console.error(`brrr hook send failed: ${result.error}`)
   }
 }
 
-async function buildDispatchPayload(options: DispatchOptions): Promise<SendPayload | undefined> {
+interface DispatchPayload {
+  payload: SendPayload
+  afterSend?: () => Promise<void>
+}
+
+async function buildDispatchPayload(options: DispatchOptions): Promise<DispatchPayload | undefined> {
   if (options.agent === "claude") {
     const input = JSON.parse(await readStdin()) as ClaudePayload
+    if (options.event === "error") {
+      return {
+        payload: buildClaudeErrorPayload(input.cwd, input.error_details ?? input.error ?? input.last_assistant_message)
+      }
+    }
+
     if (options.event === "needs-approval") {
-      return buildClaudeApprovalPayload(
+      if (isClaudeDelayedPermissionNotification(input) && await wasRecentClaudePermissionRequestSent(input.session_id)) {
+        return undefined
+      }
+
+      const payload = buildClaudeApprovalPayload(
         input.cwd,
-        input.message ?? extractClaudeNeedsAttentionMessage(input.tool_name, input.tool_input)
+        input.message ?? extractClaudeNeedsAttentionMessage(input)
+      )
+
+      return {
+        payload,
+        afterSend: isClaudePermissionRequest(input)
+          ? () => markClaudePermissionRequestSent(input.session_id)
+          : undefined
+      }
+    }
+    return {
+      payload: buildClaudeFinishedPayload(
+        input.cwd,
+        input.last_assistant_message?.trim() || (input.stop_hook_active ? undefined : input.message)
       )
     }
-    return buildClaudeFinishedPayload(
-      input.cwd,
-      input.last_assistant_message?.trim() || (input.stop_hook_active ? undefined : input.message)
-    )
   }
 
   if (options.agent === "copilot") {
     const input = JSON.parse(await readStdin()) as CopilotPayload
     if (options.event === "error") {
-      return buildCopilotErrorPayload(input.cwd, input.error?.message)
+      return { payload: buildCopilotErrorPayload(input.cwd, input.error?.message) }
     }
 
-    return shouldSendCopilotFinishedNotification(input)
+    const payload = shouldSendCopilotFinishedNotification(input)
       ? buildCopilotFinishedPayload(input.cwd, await extractCopilotFinishedMessage(input))
       : undefined
+    return payload ? { payload } : undefined
   }
 
   if (!options.payloadJson) {
@@ -61,7 +96,8 @@ async function buildDispatchPayload(options: DispatchOptions): Promise<SendPaylo
   }
 
   const input = JSON.parse(options.payloadJson) as CodexPayload
-  return buildCodexFinishedPayload(input.cwd, input["last-assistant-message"] ?? undefined)
+  const payload = buildCodexFinishedPayload(input.cwd, input["last-assistant-message"] ?? undefined)
+  return payload ? { payload } : undefined
 }
 
 async function readStdin(): Promise<string> {
@@ -73,8 +109,14 @@ async function readStdin(): Promise<string> {
 }
 
 interface ClaudePayload {
+  session_id?: string
+  hook_event_name?: string
+  notification_type?: string
   cwd?: string
   message?: string
+  title?: string
+  error?: string
+  error_details?: string
   last_assistant_message?: string
   stop_hook_active?: boolean
   tool_name?: string
@@ -176,16 +218,83 @@ async function readCopilotTranscriptMessage(transcriptPath: string | undefined):
   }
 }
 
-function extractClaudeNeedsAttentionMessage(toolName?: string, toolInput?: unknown): string | undefined {
-  if (toolName !== "AskUserQuestion") return undefined
+function extractClaudeNeedsAttentionMessage(input: ClaudePayload): string | undefined {
+  if (input.tool_name === "AskUserQuestion") {
+    return extractClaudeAskUserQuestionMessage(input.tool_input)
+  }
+
+  if (isClaudePermissionRequest(input) && input.tool_name) {
+    const detail = extractClaudePermissionRequestDetail(input.tool_input)
+    return detail
+      ? `Claude needs approval to use ${input.tool_name}: ${detail}`
+      : `Claude needs approval to use ${input.tool_name}.`
+  }
+}
+
+function extractClaudeAskUserQuestionMessage(toolInput?: unknown): string | undefined {
   if (!toolInput || typeof toolInput !== "object" || Array.isArray(toolInput)) return undefined
 
   const question = readStringField(toolInput, "question")
     ?? readStringField(toolInput, "prompt")
     ?? readStringField(toolInput, "message")
     ?? readStringField(toolInput, "text")
+    ?? readFirstClaudeQuestion(toolInput)
 
   return question ? `Claude is waiting for your input: ${question}` : undefined
+}
+
+function readFirstClaudeQuestion(value: object): string | undefined {
+  const questions = (value as Record<string, unknown>).questions
+  if (!Array.isArray(questions)) return undefined
+
+  for (const item of questions) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue
+    const question = readStringField(item, "question")
+    if (question) return question
+  }
+}
+
+function extractClaudePermissionRequestDetail(toolInput?: unknown): string | undefined {
+  if (!toolInput || typeof toolInput !== "object" || Array.isArray(toolInput)) return undefined
+
+  return readStringField(toolInput, "description")
+    ?? readStringField(toolInput, "command")
+    ?? readStringField(toolInput, "file_path")
+}
+
+function isClaudePermissionRequest(input: ClaudePayload): boolean {
+  return input.hook_event_name === "PermissionRequest"
+}
+
+function isClaudeDelayedPermissionNotification(input: ClaudePayload): boolean {
+  return input.hook_event_name === "Notification" && input.notification_type === "permission_prompt"
+}
+
+const CLAUDE_PERMISSION_DEDUPE_MS = 30_000
+const claudePermissionDedupeDir = join(tmpdir(), "brrr-claude-permission-requests")
+
+async function wasRecentClaudePermissionRequestSent(sessionId?: string): Promise<boolean> {
+  if (!sessionId) return false
+
+  try {
+    const text = await readFile(getClaudePermissionDedupePath(sessionId), "utf8")
+    const timestamp = Number(text)
+    return Number.isFinite(timestamp) && Date.now() - timestamp < CLAUDE_PERMISSION_DEDUPE_MS
+  } catch {
+    return false
+  }
+}
+
+async function markClaudePermissionRequestSent(sessionId?: string): Promise<void> {
+  if (!sessionId) return
+
+  await mkdir(claudePermissionDedupeDir, { recursive: true })
+  await writeFile(getClaudePermissionDedupePath(sessionId), String(Date.now()), "utf8")
+}
+
+function getClaudePermissionDedupePath(sessionId: string): string {
+  const hash = createHash("sha256").update(sessionId).digest("hex")
+  return join(claudePermissionDedupeDir, `${hash}.txt`)
 }
 
 function readStringField(value: object, key: string): string | undefined {
