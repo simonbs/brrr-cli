@@ -288,8 +288,12 @@ async function wasRecentClaudePermissionRequestSent(sessionId?: string): Promise
 async function markClaudePermissionRequestSent(sessionId?: string): Promise<void> {
   if (!sessionId) return
 
-  await mkdir(claudePermissionDedupeDir, { recursive: true })
-  await writeFile(getClaudePermissionDedupePath(sessionId), String(Date.now()), "utf8")
+  try {
+    await mkdir(claudePermissionDedupeDir, { recursive: true })
+    await writeFile(getClaudePermissionDedupePath(sessionId), String(Date.now()), "utf8")
+  } catch {
+    // Best-effort dedupe marker; ignore write failures.
+  }
 }
 
 function getClaudePermissionDedupePath(sessionId: string): string {
