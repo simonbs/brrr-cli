@@ -18,4 +18,21 @@ describe("dispatch", () => {
 
     expect(errorSpy).toHaveBeenCalled()
   })
+
+  test("skips title-only Codex assistant JSON", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    await dispatchCommand({
+      agent: "codex",
+      event: "finished",
+      webhook: "https://api.brrr.now/v1/br_test",
+      payloadJson: JSON.stringify({
+        cwd: "/tmp/project",
+        "last-assistant-message": "{\"title\":\"Fix duplicate shared text\"}"
+      })
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
