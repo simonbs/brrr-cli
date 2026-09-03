@@ -1,6 +1,7 @@
 import type { AgentAdapter, InstallOptions, ManualEvent } from "./types.js"
 import {
   buildClaudeApprovalPayload,
+  buildClaudeErrorPayload,
   buildClaudeFinishedPayload,
   installClaude,
   readClaudeInstallState,
@@ -25,10 +26,7 @@ export class ClaudeAdapter implements AgentAdapter {
   buildManualDefaults(event: ManualEvent) {
     if (event === "needs-approval") return buildClaudeApprovalPayload()
     if (event === "error") {
-      return {
-        title: "Claude error",
-        message: "Claude hit an error."
-      }
+      return buildClaudeErrorPayload()
     }
     return buildClaudeFinishedPayload()
   }

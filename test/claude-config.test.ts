@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import {
   buildClaudeApprovalPayload,
   buildClaudeCommand,
+  buildClaudeErrorPayload,
   buildClaudeFinishedPayload
 } from "../src/agent/config/claude-settings.js"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
@@ -41,6 +42,11 @@ describe("claude config generation", () => {
     expect(buildClaudeApprovalPayload("/tmp/project")).toEqual({
       title: "Claude needs approval",
       message: "Claude is waiting for your input in 'project'.",
+      icon_url: getAgentIconUrl("claude")
+    })
+    expect(buildClaudeErrorPayload("/tmp/project", "Rate limit reached")).toEqual({
+      title: "Claude error",
+      message: "Rate limit reached",
       icon_url: getAgentIconUrl("claude")
     })
   })

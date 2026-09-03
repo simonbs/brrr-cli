@@ -12,7 +12,10 @@ import type { SendPayload } from "../transport/payload.js"
 const configPath = join(homedir(), ".claude", "settings.json")
 const STOP_MARKER = "brrr:claude:stop:v1"
 const PERMISSION_MARKER = "brrr:claude:notification:permission_prompt:v1"
+const PERMISSION_REQUEST_MARKER = "brrr:claude:permissionrequest:v1"
 const ASK_USER_QUESTION_MARKER = "brrr:claude:pretooluse:askuserquestion:v1"
+const ELICITATION_NOTIFICATION_MARKER = "brrr:claude:notification:elicitation:v1"
+const STOP_FAILURE_MARKER = "brrr:claude:stopfailure:v1"
 
 interface ClaudeHookEntry {
   type?: string
@@ -39,17 +42,38 @@ export async function readClaudeInstallState(): Promise<AgentInstallState> {
 
   const stopCommand = findHookCommand(config, "Stop", undefined, STOP_MARKER)
   const permissionCommand = findHookCommand(config, "Notification", "permission_prompt", PERMISSION_MARKER)
+  const permissionRequestCommand = findHookCommand(config, "PermissionRequest", undefined, PERMISSION_REQUEST_MARKER)
   const askUserQuestionCommand = findHookCommand(config, "PreToolUse", "AskUserQuestion", ASK_USER_QUESTION_MARKER)
-  const installed = !!stopCommand && !!permissionCommand && !!askUserQuestionCommand
+  const elicitationCommand = findHookCommand(
+    config,
+    "Notification",
+    "elicitation_dialog|elicitation_url_dialog",
+    ELICITATION_NOTIFICATION_MARKER
+  )
+  const stopFailureCommand = findHookCommand(config, "StopFailure", undefined, STOP_FAILURE_MARKER)
+  const installed = !!stopCommand
+    && !!permissionCommand
+    && !!permissionRequestCommand
+    && !!askUserQuestionCommand
+    && !!elicitationCommand
+    && !!stopFailureCommand
 
   return {
     agent: "claude",
     present,
     installed,
     configPath,
-    webhookRef: installed ? extractWebhookArg(stopCommand) ?? extractWebhookArg(permissionCommand) : undefined,
-    idleSeconds: installed ? extractIdleSecondsArg(stopCommand) ?? extractIdleSecondsArg(permissionCommand) : undefined,
-    supportedEvents: ["finished", "needs-approval"]
+    webhookRef: installed
+      ? extractWebhookArg(stopCommand)
+        ?? extractWebhookArg(permissionRequestCommand)
+        ?? extractWebhookArg(permissionCommand)
+      : undefined,
+    idleSeconds: installed
+      ? extractIdleSecondsArg(stopCommand)
+        ?? extractIdleSecondsArg(permissionRequestCommand)
+        ?? extractIdleSecondsArg(permissionCommand)
+      : undefined,
+    supportedEvents: ["finished", "needs-approval", "error"]
   }
 }
 
@@ -75,10 +99,31 @@ export async function installClaude(options: InstallOptions): Promise<InstallRes
   )
   upsertEventHook(
     nextSettings,
+    "PermissionRequest",
+    undefined,
+    PERMISSION_REQUEST_MARKER,
+    buildClaudeCommand("needs-approval", options.webhook, PERMISSION_REQUEST_MARKER, options.idleSeconds)
+  )
+  upsertEventHook(
+    nextSettings,
     "PreToolUse",
     "AskUserQuestion",
     ASK_USER_QUESTION_MARKER,
     buildClaudeCommand("needs-approval", options.webhook, ASK_USER_QUESTION_MARKER, options.idleSeconds)
+  )
+  upsertEventHook(
+    nextSettings,
+    "Notification",
+    "elicitation_dialog|elicitation_url_dialog",
+    ELICITATION_NOTIFICATION_MARKER,
+    buildClaudeCommand("needs-approval", options.webhook, ELICITATION_NOTIFICATION_MARKER, options.idleSeconds)
+  )
+  upsertEventHook(
+    nextSettings,
+    "StopFailure",
+    undefined,
+    STOP_FAILURE_MARKER,
+    buildClaudeCommand("error", options.webhook, STOP_FAILURE_MARKER, options.idleSeconds)
   )
 
   const currentText = serializeSettings(settings)
@@ -98,7 +143,10 @@ export async function uninstallClaude(): Promise<UninstallResult> {
 
   removeEventHook(nextSettings, "Stop", undefined, STOP_MARKER)
   removeEventHook(nextSettings, "Notification", "permission_prompt", PERMISSION_MARKER)
+  removeEventHook(nextSettings, "PermissionRequest", undefined, PERMISSION_REQUEST_MARKER)
   removeEventHook(nextSettings, "PreToolUse", "AskUserQuestion", ASK_USER_QUESTION_MARKER)
+  removeEventHook(nextSettings, "Notification", "elicitation_dialog|elicitation_url_dialog", ELICITATION_NOTIFICATION_MARKER)
+  removeEventHook(nextSettings, "StopFailure", undefined, STOP_FAILURE_MARKER)
 
   const currentText = serializeSettings(settings)
   const nextText = serializeSettings(nextSettings)
@@ -112,7 +160,7 @@ export async function uninstallClaude(): Promise<UninstallResult> {
 }
 
 export function buildClaudeCommand(
-  event: "finished" | "needs-approval",
+  event: "finished" | "needs-approval" | "error",
   webhook: InstallOptions["webhook"],
   marker: string,
   idleSeconds?: number
@@ -258,7 +306,10 @@ function hasManagedClaudeHooks(settings: ClaudeSettings): boolean {
   return [
     findHookCommand(settings, "Stop", undefined, STOP_MARKER),
     findHookCommand(settings, "Notification", "permission_prompt", PERMISSION_MARKER),
-    findHookCommand(settings, "PreToolUse", "AskUserQuestion", ASK_USER_QUESTION_MARKER)
+    findHookCommand(settings, "PermissionRequest", undefined, PERMISSION_REQUEST_MARKER),
+    findHookCommand(settings, "PreToolUse", "AskUserQuestion", ASK_USER_QUESTION_MARKER),
+    findHookCommand(settings, "Notification", "elicitation_dialog|elicitation_url_dialog", ELICITATION_NOTIFICATION_MARKER),
+    findHookCommand(settings, "StopFailure", undefined, STOP_FAILURE_MARKER)
   ].some(Boolean)
 }
 
@@ -309,6 +360,17 @@ export function buildClaudeApprovalPayload(cwd?: string, message?: string): Send
     message: message?.trim() || (projectName
       ? `Claude is waiting for your input in '${projectName}'.`
       : "Claude is waiting for your input."),
+    icon_url: getAgentIconUrl("claude")
+  }
+}
+
+export function buildClaudeErrorPayload(cwd?: string, errorMessage?: string): SendPayload {
+  const projectName = cwd ? basename(cwd) : undefined
+  return {
+    title: "Claude error",
+    message: errorMessage?.trim() || (projectName
+      ? `Claude hit an error in '${projectName}'.`
+      : "Claude hit an error."),
     icon_url: getAgentIconUrl("claude")
   }
 }

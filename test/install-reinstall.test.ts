@@ -40,7 +40,13 @@ describe("install command behavior", () => {
     expect(second.message).toBe("reinstalled")
     expect(second.changed).toBe(true)
     expect(second.backupPath).toContain(".brrr-backup-")
-    expect(await readFile(getClaudeConfigPath(), "utf8")).toContain("\"Stop\"")
+    const installedConfig = await readFile(getClaudeConfigPath(), "utf8")
+    expect(installedConfig).toContain("\"Stop\"")
+    expect(installedConfig).toContain("\"StopFailure\"")
+    expect(installedConfig).toContain("\"PermissionRequest\"")
+    expect(installedConfig).toContain("\"permission_prompt\"")
+    expect(installedConfig).toContain("\"AskUserQuestion\"")
+    expect(installedConfig).toContain("\"elicitation_dialog|elicitation_url_dialog\"")
   })
 
   test("codex install reinstalls when brrr notify already exists", async () => {
