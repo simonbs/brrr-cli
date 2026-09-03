@@ -76,7 +76,7 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 | Agent       | Auto-Install | Config                             | Hooks                                                                         |
 |-------------|:------------:|------------------------------------|-------------------------------------------------------------------------------|
 | Claude Code | ✅           | `~/.claude/settings.json`          | `Stop`, `StopFailure`, `PermissionRequest`, `Notification(permission_prompt, elicitation_dialog, elicitation_url_dialog)`, and `PreToolUse(AskUserQuestion)`. |
-| Codex       | ✅           | `~/.codex/config.toml`             | `notify`                                                                      |
+| Codex       | ✅           | `$CODEX_HOME` or `~/.codex`: `config.toml`, `hooks.json` | `notify` and `PermissionRequest`                                            |
 | Copilot     | ✅           | `.github/hooks/brrr-copilot.json`  | `agentStop` and `errorOccurred`                                               |
 
 ## 🧭 Usage
