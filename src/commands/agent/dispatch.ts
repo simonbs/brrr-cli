@@ -10,7 +10,7 @@ import {
   buildClaudeErrorPayload,
   buildClaudeFinishedPayload
 } from "../../agent/config/claude-settings.js"
-import { buildCodexFinishedPayload } from "../../agent/config/codex-config.js"
+import { buildCodexApprovalPayload, buildCodexFinishedPayload } from "../../agent/config/codex-config.js"
 import { buildCopilotErrorPayload, buildCopilotFinishedPayload } from "../../agent/config/copilot-config.js"
 import { shouldSkipNotificationForIdleThreshold } from "../../agent/idle.js"
 
@@ -91,10 +91,19 @@ async function buildDispatchPayload(options: DispatchOptions): Promise<DispatchP
     return payload ? { payload } : undefined
   }
 
+  if (options.event === "needs-approval") {
+    const input = JSON.parse(await readStdin()) as CodexPayload
+    return {
+      payload: buildCodexApprovalPayload(
+        input.cwd,
+        input.message ?? extractCodexNeedsApprovalMessage(input)
+      )
+    }
+  }
+
   if (!options.payloadJson) {
     throw new Error("Missing Codex payload JSON.")
   }
-
   const input = JSON.parse(options.payloadJson) as CodexPayload
   const payload = buildCodexFinishedPayload(input.cwd, input["last-assistant-message"] ?? undefined)
   return payload ? { payload } : undefined
@@ -124,7 +133,11 @@ interface ClaudePayload {
 }
 
 interface CodexPayload {
+  hook_event_name?: string
+  tool_name?: string
+  tool_input?: unknown
   cwd?: string
+  message?: string
   "last-assistant-message"?: string | null
 }
 
@@ -224,7 +237,7 @@ function extractClaudeNeedsAttentionMessage(input: ClaudePayload): string | unde
   }
 
   if (isClaudePermissionRequest(input) && input.tool_name) {
-    const detail = extractClaudePermissionRequestDetail(input.tool_input)
+    const detail = extractToolInputDetail(input.tool_input)
     return detail
       ? `Claude needs approval to use ${input.tool_name}: ${detail}`
       : `Claude needs approval to use ${input.tool_name}.`
@@ -254,7 +267,16 @@ function readFirstClaudeQuestion(value: object): string | undefined {
   }
 }
 
-function extractClaudePermissionRequestDetail(toolInput?: unknown): string | undefined {
+function extractCodexNeedsApprovalMessage(input: CodexPayload): string | undefined {
+  if (input.hook_event_name !== "PermissionRequest" || !input.tool_name) return undefined
+
+  const detail = extractToolInputDetail(input.tool_input)
+  return detail
+    ? `Codex needs approval to use ${input.tool_name}: ${detail}`
+    : `Codex needs approval to use ${input.tool_name}.`
+}
+
+function extractToolInputDetail(toolInput?: unknown): string | undefined {
   if (!toolInput || typeof toolInput !== "object" || Array.isArray(toolInput)) return undefined
 
   return readStringField(toolInput, "description")

@@ -1,5 +1,6 @@
 import type { AgentAdapter, InstallOptions, ManualEvent } from "./types.js"
 import {
+  buildCodexApprovalPayload,
   buildCodexFinishedPayload,
   installCodex,
   readCodexInstallState,
@@ -22,6 +23,7 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   buildManualDefaults(event: ManualEvent) {
+    if (event === "needs-approval") return buildCodexApprovalPayload()
     if (event === "error") {
       return {
         title: "Codex error",

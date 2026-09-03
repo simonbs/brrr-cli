@@ -54,7 +54,7 @@ describe("install command behavior", () => {
     process.env.HOME = home
     vi.resetModules()
 
-    const { installCodex, getCodexConfigPath } = await import("../src/agent/config/codex-config.js")
+    const { installCodex, getCodexConfigPath, getCodexHooksPath } = await import("../src/agent/config/codex-config.js")
 
     const first = await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
     const second = await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
@@ -65,6 +65,7 @@ describe("install command behavior", () => {
     expect(second.changed).toBe(true)
     expect(second.backupPath).toContain(".brrr-backup-")
     expect(await readFile(getCodexConfigPath(), "utf8")).toContain("notify = [")
+    expect(await readFile(getCodexHooksPath(), "utf8")).toContain("\"PermissionRequest\"")
   })
 
   test("copilot install reinstalls when brrr hooks already exist", async () => {
