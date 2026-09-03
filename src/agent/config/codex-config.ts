@@ -407,11 +407,9 @@ async function loadHooksConfig(): Promise<CodexHooksConfig> {
   const text = await readTextFileIfExists(hooksPath)
   if (!text) return {}
 
-  const parsed = JSON.parse(text) as unknown
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`Invalid Codex hooks configuration at ${hooksPath}.`)
-  }
-
+  let parsed: unknown
+  try { parsed = JSON.parse(text) } catch { throw new Error(`Invalid Codex hooks configuration at ${hooksPath}.`) }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`Invalid Codex hooks configuration at ${hooksPath}.`)
   return parsed as CodexHooksConfig
 }
 
