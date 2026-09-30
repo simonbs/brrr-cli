@@ -6,6 +6,7 @@ import { parseWebhookRef } from "../src/agent/webhook-ref.js"
 import { addFakeCommandToPath } from "./helpers/fake-command.js"
 
 const originalHome = process.env.HOME
+const originalCodexHome = process.env.CODEX_HOME
 const originalCwd = process.cwd()
 const originalPath = process.env.PATH
 
@@ -15,6 +16,9 @@ afterEach(() => {
   } else {
     process.env.HOME = originalHome
   }
+
+  if (originalCodexHome === undefined) delete process.env.CODEX_HOME
+  else process.env.CODEX_HOME = originalCodexHome
 
   process.chdir(originalCwd)
   if (originalPath === undefined) {
@@ -49,22 +53,22 @@ describe("install command behavior", () => {
     expect(installedConfig).toContain("\"elicitation_dialog|elicitation_url_dialog\"")
   })
 
-  test("codex install reinstalls when brrr notify already exists", async () => {
+  test("codex install skips when both JSON hooks already match", async () => {
     const home = await mkdtemp(join(tmpdir(), "brrr-codex-home-"))
-    process.env.HOME = home
+    process.env.CODEX_HOME = home
     vi.resetModules()
 
-    const { installCodex, getCodexConfigPath, getCodexHooksPath } = await import("../src/agent/config/codex-config.js")
+    const { installCodex, getCodexHooksPath } = await import("../src/agent/config/codex-config.js")
 
     const first = await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
     const second = await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
 
     expect(first.message).toBe("installed")
     expect(first.backupPath).toBeUndefined()
-    expect(second.message).toBe("reinstalled")
-    expect(second.changed).toBe(true)
-    expect(second.backupPath).toContain(".brrr-backup-")
-    expect(await readFile(getCodexConfigPath(), "utf8")).toContain("notify = [")
+    expect(second.message).toBe("already configured")
+    expect(second.changed).toBe(false)
+    expect(second.backupPath).toBeUndefined()
+    expect(await readFile(getCodexHooksPath(), "utf8")).toContain("\"Stop\"")
     expect(await readFile(getCodexHooksPath(), "utf8")).toContain("\"PermissionRequest\"")
   })
 

@@ -35,7 +35,7 @@ The goal is simple: when Claude, Codex, or Copilot finishes, or when Claude need
 
 Each notification carries the icon of the agent that sent it, so you can tell Claude, Codex, and Copilot pushes apart at a glance. brrr shows it in place of the app icon on iPhone and iPad.
 
-It uses <a href="https://code.claude.com/docs/en/hooks" target="_blank">Claude's hooks</a>, <a href="https://developers.openai.com/codex/config-reference/" target="_blank">Codex' notify</a>, and <a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks" target="_blank">Copilot's hooks</a> to detect the agent is done. The CLI automatically modifies `~/.claude/settings.json`, `~/.codex/config.toml`, and a repo-local Copilot hooks file at `.github/hooks/brrr-copilot.json`.
+It uses <a href="https://code.claude.com/docs/en/hooks" target="_blank">Claude's hooks</a>, <a href="https://learn.chatgpt.com/docs/hooks" target="_blank">Codex' hooks</a>, and <a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks" target="_blank">Copilot's hooks</a> to detect the agent is done. The CLI automatically modifies `~/.claude/settings.json`, `~/.codex/hooks.json`, and a repo-local Copilot hooks file at `.github/hooks/brrr-copilot.json`.
 
 ## 🚀 Getting Started
 
@@ -76,7 +76,7 @@ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 | Agent       | Auto-Install | Config                             | Hooks                                                                         |
 |-------------|:------------:|------------------------------------|-------------------------------------------------------------------------------|
 | Claude Code | ✅           | `~/.claude/settings.json`          | `Stop`, `StopFailure`, `PermissionRequest`, `Notification(permission_prompt, elicitation_dialog, elicitation_url_dialog)`, and `PreToolUse(AskUserQuestion)`. |
-| Codex       | ✅           | `$CODEX_HOME` or `~/.codex`: `config.toml`, `hooks.json` | `notify` and `PermissionRequest`                                            |
+| Codex       | ✅           | `$CODEX_HOME` or `~/.codex`: `hooks.json` | `Stop` and `PermissionRequest`                                            |
 | Copilot     | ✅           | `.github/hooks/brrr-copilot.json`  | `agentStop` and `errorOccurred`                                               |
 
 ## 🧭 Usage
@@ -123,6 +123,14 @@ If you want the variable available in future shell sessions, add it to your shel
 export BRRR_WEBHOOK_URL='https://api.brrr.now/v1/br_your_webhook_id'
 ```
 
+#### Codex Setup
+
+Codex stores both finished and approval notifications in `$CODEX_HOME/hooks.json` (or `~/.codex/hooks.json`). After installation, open `/hooks` in Codex to review and trust the brrr hooks. Updated hook definitions require review again.
+
+Re-running installation with matching hooks and options reports `already configured` and leaves the files untouched. If hooks are missing, duplicated, or outdated, brrr updates only its own hooks and preserves unrelated configuration.
+
+For existing installations, the next install removes the legacy brrr `notify` block from `config.toml` and restores any notification command saved by brrr. It also removes legacy brrr commands nested in another integration’s `--previous-notify` chain, preserving that integration and any original notifier. Fresh installations do not create or modify `config.toml`. Uninstall also cleans up legacy installations.
+
 #### Only Notify When Idle
 
 `--idle-seconds` is required.
@@ -146,7 +154,7 @@ Example output:
 ```text
 Agent     Present Installed Idle    Config
 claude    yes     yes       300s    ~/.claude/settings.json
-codex     yes     yes       300s    ~/.codex/config.toml
+codex     yes     yes       300s    ~/.codex/hooks.json
 copilot   yes     yes       300s    /path/to/repo/.github/hooks/brrr-copilot.json
 ```
 
@@ -172,7 +180,7 @@ $ brrr agent install all --webhook '$BRRR_WEBHOOK_URL' --idle-seconds 300
 $ brrr agent status
 Agent     Present Installed Idle    Config
 claude    yes     yes       300s    ~/.claude/settings.json
-codex     yes     yes       300s    ~/.codex/config.toml
+codex     yes     yes       300s    ~/.codex/hooks.json
 copilot   yes     yes       300s    /path/to/repo/.github/hooks/brrr-copilot.json
 
 $ brrr agent uninstall codex

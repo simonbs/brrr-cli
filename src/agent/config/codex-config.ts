@@ -1,4 +1,5 @@
 import { basename, join } from "node:path"
+import { parse as parseToml } from "smol-toml"
 import { homedir } from "node:os"
 import { createBackup } from "./backup.js"
 import { readTextFileIfExists, writeTextFile } from "../../utils/fs.js"
@@ -13,6 +14,7 @@ const configFileName = "config.toml"
 const hooksFileName = "hooks.json"
 const BLOCK_START = "# brrr agent integration start"
 const BLOCK_END = "# brrr agent integration end"
+const STOP_MARKER = "brrr:codex:stop:v1"
 const PERMISSION_REQUEST_MARKER = "brrr:codex:permissionrequest:v1"
 
 interface CodexHookEntry {
@@ -34,110 +36,190 @@ interface CodexHooksConfig {
 }
 
 export async function readCodexInstallState(): Promise<AgentInstallState> {
-  const configPath = getCodexConfigPath()
-  const [configText, present] = await Promise.all([
-    readTextFileIfExists(configPath),
-    detectCodexPresence()
-  ])
-
-  const block = extractManagedBlock(configText ?? "")
-  const hooksConfig = await loadHooksConfig()
-  const permissionRequestCommand = findHookCommand(
-    hooksConfig,
-    "PermissionRequest",
-    undefined,
-    PERMISSION_REQUEST_MARKER
-  )
-  const installed = block !== null || !!permissionRequestCommand
+  const [hooksConfig, present] = await Promise.all([loadHooksConfig(), detectCodexPresence()])
+  const stopCommand = findHookCommand(hooksConfig, "Stop", STOP_MARKER)
+  const approvalCommand = findHookCommand(hooksConfig, "PermissionRequest", PERMISSION_REQUEST_MARKER)
   return {
     agent: "codex",
     present,
-    installed,
-    configPath,
-    webhookRef: installed
-      ? extractWebhookFromCodexBlock(block ?? "") ?? extractWebhookArg(permissionRequestCommand)
-      : undefined,
-    idleSeconds: installed
-      ? extractIdleSecondsFromCodexBlock(block ?? "") ?? extractIdleSecondsArg(permissionRequestCommand)
-      : undefined,
+    installed: !!stopCommand && !!approvalCommand,
+    configPath: getCodexHooksPath(),
+    webhookRef: extractWebhookArg(stopCommand ?? approvalCommand),
+    idleSeconds: extractIdleSecondsArg(stopCommand ?? approvalCommand),
     supportedEvents: ["finished", "needs-approval"]
   }
 }
 
 export async function installCodex(options: InstallOptions): Promise<InstallResult> {
-  const configPath = getCodexConfigPath()
-  const currentText = (await readTextFileIfExists(configPath)) ?? ""
-  const currentHooksConfig = await loadHooksConfig()
-  const wasInstalled = extractManagedBlock(currentText) !== null
-    || !!findHookCommand(currentHooksConfig, "PermissionRequest", undefined, PERMISSION_REQUEST_MARKER)
-  const currentBlock = extractManagedBlock(currentText)
-  const preservedNotify = currentBlock ? extractOriginalNotifyFromCodexBlock(currentBlock) : undefined
-  const textWithoutBlock = removeManagedBlock(currentText)
-  const existingNotify = extractNotifyAssignment(textWithoutBlock)
-  const originalNotify = existingNotify?.args ?? preservedNotify
-  const cleanedText = existingNotify ? removeNotifyAssignment(textWithoutBlock, existingNotify) : textWithoutBlock
-
-  const nextBlock = buildCodexManagedBlock(options.webhook, options.idleSeconds, originalNotify)
-  const nextText = upsertManagedBlock(cleanedText, nextBlock)
-  const hooksResult = await installCodexPermissionRequestHook(options)
-  const backupPath = await maybeCreateBackup(configPath) ?? hooksResult.backupPath
-  await writeTextFile(configPath, nextText)
-  return {
-    changed: normalizeText(currentText) !== normalizeText(nextText) || wasInstalled || hooksResult.changed,
-    backupPath,
-    message: wasInstalled ? "reinstalled" : "installed"
-  }
-}
-
-export async function uninstallCodex(): Promise<UninstallResult> {
+  const currentConfig = await loadHooksConfig()
   const configPath = getCodexConfigPath()
   const currentText = (await readTextFileIfExists(configPath)) ?? ""
   const block = extractManagedBlock(currentText)
-  const originalNotify = block ? extractOriginalNotifyFromCodexBlock(block) : undefined
-  const textWithoutBlock = removeManagedBlock(currentText)
-  const nextText = originalNotify
-    ? upsertTopLevelNotify(textWithoutBlock, originalNotify)
-    : textWithoutBlock
-  const hooksResult = await uninstallCodexPermissionRequestHook()
-  const configChanged = normalizeText(currentText) !== normalizeText(nextText)
-  if (!configChanged && !hooksResult.changed) {
+  const nextText = removeLegacyNotify(currentText)
+  const configChanged = currentText !== nextText
+  const expectedHooks = buildExpectedHooks(options)
+  const hooksChanged = !hasExpectedHooks(currentConfig, expectedHooks)
+  const wasInstalled = block !== null || configChanged || hasManagedHooks(currentConfig)
+
+  if (!configChanged && !hooksChanged) {
+    return { changed: false, message: "already configured" }
+  }
+
+  let backupPath: string | undefined
+  if (hooksChanged) {
+    const nextConfig = structuredClone(currentConfig)
+    removeManagedHooks(nextConfig)
+    nextConfig.hooks ??= {}
+    for (const [event, hook] of Object.entries(expectedHooks)) {
+      nextConfig.hooks[event] ??= []
+      nextConfig.hooks[event].push({ hooks: [hook] })
+    }
+    backupPath = await maybeCreateBackup(getCodexHooksPath())
+    await writeTextFile(getCodexHooksPath(), `${serializeHooksConfig(nextConfig)}\n`)
+  }
+  if (configChanged) {
+    const configBackupPath = await maybeCreateBackup(configPath)
+    await writeTextFile(configPath, nextText)
+    backupPath = configBackupPath ?? backupPath
+  }
+  return { changed: true, backupPath, message: wasInstalled ? "reinstalled" : "installed" }
+}
+
+export async function uninstallCodex(): Promise<UninstallResult> {
+  const currentConfig = await loadHooksConfig()
+  const configPath = getCodexConfigPath()
+  const currentText = (await readTextFileIfExists(configPath)) ?? ""
+  const nextText = removeLegacyNotify(currentText)
+  const configChanged = currentText !== nextText
+  const hooksChanged = hasManagedHooks(currentConfig)
+  if (!configChanged && !hooksChanged) {
     return { changed: false, message: "not installed" }
   }
 
-  const backupPath = configChanged
-    ? await maybeCreateBackup(configPath) ?? hooksResult.backupPath
-    : hooksResult.backupPath
+  let backupPath: string | undefined
+  if (hooksChanged) {
+    const nextConfig = structuredClone(currentConfig)
+    removeManagedHooks(nextConfig)
+    backupPath = await maybeCreateBackup(getCodexHooksPath())
+    await writeTextFile(getCodexHooksPath(), `${serializeHooksConfig(nextConfig)}\n`)
+  }
   if (configChanged) {
+    const configBackupPath = await maybeCreateBackup(configPath)
     await writeTextFile(configPath, nextText)
+    backupPath = configBackupPath ?? backupPath
   }
   return { changed: true, backupPath, message: "uninstalled" }
 }
 
-export function buildCodexManagedBlock(
-  webhook: InstallOptions["webhook"],
-  idleSeconds?: number,
-  originalNotify?: string[]
-): string {
-  const notifyArgs = [
-    "brrr",
-    "agent",
-    "dispatch",
-    "--agent",
-    "codex",
-    "--event",
-    "finished",
-    "--webhook",
-    stringifyWebhookRef(webhook),
-    ...(idleSeconds === undefined ? [] : ["--idle-seconds", String(idleSeconds)]),
-    "--payload-json"
-  ]
+function removeLegacyNotify(text: string): string {
+  const block = extractManagedBlock(text)
+  const originalNotify = block ? extractOriginalNotifyFromCodexBlock(block) : undefined
+  let cleaned = text
+  if (block) {
+    const blockNotify = findNotifyAssignment(block)
+    // Another integration may have wrapped our command inside the marked block.
+    // Keep that integration's command and remove only the brrr comments.
+    cleaned = blockNotify && !isLegacyBrrrNotify(blockNotify.args)
+      ? text.replace(block, block.replace(/^# brrr (?:agent integration (?:start|end)|original notify json: .*)[\r\n]*/gm, ""))
+      : removeManagedBlock(text)
+    if (originalNotify && !findNotifyAssignment(cleaned)) {
+      cleaned = upsertTopLevelNotify(cleaned, originalNotify)
+    }
+  }
 
-  return [
-    BLOCK_START,
-    ...(originalNotify ? [`# brrr original notify json: ${JSON.stringify(originalNotify)}`] : []),
-    `notify = [${notifyArgs.map(toTomlString).join(", ")}]`,
-    BLOCK_END
-  ].join("\n")
+  const assignment = findNotifyAssignment(cleaned)
+  if (!assignment) return cleaned
+  const nextArgs = removeBrrrFromNotify(assignment.args, originalNotify)
+  if (nextArgs === assignment.args) return cleaned
+  const replacement = nextArgs ? `notify = [${nextArgs.map(toTomlString).join(", ")}]` : ""
+  return cleaned.slice(0, assignment.start) + replacement + cleaned.slice(assignment.end)
+}
+
+function isLegacyBrrrNotify(args: string[]): boolean {
+  const agentIndex = args.indexOf("--agent", 3)
+  const eventIndex = args.indexOf("--event", 3)
+  return basename(args[0] ?? "") === "brrr" && args[1] === "agent" && args[2] === "dispatch"
+    && agentIndex >= 3 && args[agentIndex + 1] === "codex"
+    && eventIndex >= 3 && args[eventIndex + 1] === "finished"
+}
+
+function parseNotifyArgs(text: string): string[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return Array.isArray(parsed) && parsed.every(arg => typeof arg === "string") ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function removeBrrrFromNotify(args: string[], originalNotify?: string[]): string[] | undefined {
+  if (isLegacyBrrrNotify(args)) {
+    const previousIndex = args.indexOf("--previous-notify", 3)
+    const previous = (previousIndex >= 3 ? parseNotifyArgs(args[previousIndex + 1] ?? "") : undefined) ?? originalNotify
+    return previous ? removeBrrrFromNotify(previous) : undefined
+  }
+
+  let nextArgs = args
+  for (let index = 1; index < nextArgs.length - 1; index += 1) {
+    if (nextArgs[index] !== "--previous-notify") continue
+    const previous = parseNotifyArgs(nextArgs[index + 1])
+    if (!previous) continue
+    const nextPrevious = removeBrrrFromNotify(previous, originalNotify)
+    if (nextPrevious === previous) continue
+    if (nextArgs === args) nextArgs = [...args]
+    if (nextPrevious) nextArgs[index + 1] = JSON.stringify(nextPrevious)
+    else {
+      nextArgs.splice(index, 2)
+      index -= 1
+    }
+  }
+  return nextArgs
+}
+
+// Locate just the top-level assignment so the rest of the TOML stays untouched.
+// Skip TOML strings and comments, including multiline strings containing brackets.
+function findNotifyAssignment(text: string): { start: number, end: number, args: string[] } | undefined {
+  for (let index = 0; index < text.length; index += 1) {
+    if (index === 0 || text[index - 1] === "\n") {
+      const line = text.slice(index)
+      if (/^[ \t]*\[/.test(line)) return undefined
+      const match = line.match(/^[ \t]*(?:notify|"notify"|'notify')[ \t]*=[ \t]*\[/)
+      if (match) {
+        let depth = 1
+        for (let end = index + match[0].length; end < text.length; end += 1) {
+          if (text[end] === '"' || text[end] === "'") end = skipTomlString(text, end)
+          else if (text[end] === "#") end = skipTomlComment(text, end)
+          else if (text[end] === "[") depth += 1
+          else if (text[end] === "]" && --depth === 0) {
+            const assignment = text.slice(index, end + 1)
+            const args = parseToml(assignment).notify
+            if (!Array.isArray(args) || !args.every(arg => typeof arg === "string")) {
+              throw new Error("Invalid Codex notify command; expected an array of strings.")
+            }
+            return { start: index, end: end + 1, args }
+          }
+        }
+        throw new Error("Unterminated Codex notify command.")
+      }
+    }
+    if (text[index] === '"' || text[index] === "'") index = skipTomlString(text, index)
+    else if (text[index] === "#") index = skipTomlComment(text, index)
+  }
+}
+
+function skipTomlComment(text: string, start: number): number {
+  const newline = text.indexOf("\n", start)
+  return newline === -1 ? text.length : newline - 1
+}
+
+function skipTomlString(text: string, start: number): number {
+  const quote = text[start]
+  const delimiter = text.startsWith(quote.repeat(3), start) ? quote.repeat(3) : quote
+  for (let index = start + delimiter.length; index < text.length; index += 1) {
+    if (quote === '"' && text[index] === "\\") index += 1
+    else if (text.startsWith(delimiter, index)) return index + delimiter.length - 1
+  }
+  throw new Error("Unterminated string in Codex configuration.")
 }
 
 export function getCodexConfigPath(): string {
@@ -146,25 +228,6 @@ export function getCodexConfigPath(): string {
 
 export function getCodexHooksPath(): string {
   return join(getCodexHome(), hooksFileName)
-}
-
-export function extractWebhookFromCodexBlock(block: string): string | undefined {
-  const arrayMatch = block.match(/"--webhook",\s*"([^"]*?)"/)
-  if (arrayMatch) return arrayMatch[1]
-
-  const escapedMatch = block.match(/--webhook\s+\\"([^"]*?)\\"/)
-  if (escapedMatch) return escapedMatch[1]
-
-  const rawMatch = block.match(/--webhook\s+"([^"]*?)"/)
-  return rawMatch?.[1]
-}
-
-function extractIdleSecondsFromCodexBlock(block: string): number | undefined {
-  const arrayMatch = block.match(/"--idle-seconds",\s*"(\d+)"/)
-  if (arrayMatch) return Number(arrayMatch[1])
-
-  const rawMatch = block.match(/--idle-seconds\s+"(\d+)"/)
-  return rawMatch ? Number(rawMatch[1]) : undefined
 }
 
 function extractOriginalNotifyFromCodexBlock(block: string): string[] | undefined {
@@ -181,50 +244,8 @@ function extractOriginalNotifyFromCodexBlock(block: string): string[] | undefine
   }
 }
 
-async function installCodexPermissionRequestHook(options: InstallOptions): Promise<{ changed: boolean, backupPath?: string }> {
-  const hooksPath = getCodexHooksPath()
-  const currentConfig = await loadHooksConfig()
-  const nextConfig = structuredClone(currentConfig)
-
-  upsertEventHook(
-    nextConfig,
-    "PermissionRequest",
-    undefined,
-    PERMISSION_REQUEST_MARKER,
-    buildCodexHookCommand("needs-approval", options.webhook, PERMISSION_REQUEST_MARKER, options.idleSeconds)
-  )
-
-  const currentText = serializeHooksConfig(currentConfig)
-  const nextText = serializeHooksConfig(nextConfig)
-  if (currentText === nextText) {
-    return { changed: false }
-  }
-
-  const backupPath = await maybeCreateBackup(hooksPath)
-  await writeTextFile(hooksPath, `${nextText}\n`)
-  return { changed: true, backupPath }
-}
-
-async function uninstallCodexPermissionRequestHook(): Promise<{ changed: boolean, backupPath?: string }> {
-  const hooksPath = getCodexHooksPath()
-  const currentConfig = await loadHooksConfig()
-  const nextConfig = structuredClone(currentConfig)
-
-  removeEventHook(nextConfig, "PermissionRequest", undefined, PERMISSION_REQUEST_MARKER)
-
-  const currentText = serializeHooksConfig(currentConfig)
-  const nextText = serializeHooksConfig(nextConfig)
-  if (currentText === nextText) {
-    return { changed: false }
-  }
-
-  const backupPath = await maybeCreateBackup(hooksPath)
-  await writeTextFile(hooksPath, `${nextText}\n`)
-  return { changed: true, backupPath }
-}
-
 export function buildCodexHookCommand(
-  event: "needs-approval",
+  event: "finished" | "needs-approval",
   webhook: InstallOptions["webhook"],
   marker: string,
   idleSeconds?: number
@@ -242,33 +263,6 @@ export function buildCodexHookCommand(
     webhookValue,
     ...(idleSeconds === undefined ? [] : ["--idle-seconds", String(idleSeconds)])
   ].join(" ")} # ${marker}`
-}
-
-function upsertManagedBlock(currentText: string, nextBlock: string): string {
-  const existing = extractManagedBlock(currentText)
-  if (existing) {
-    return upsertManagedBlock(removeManagedBlock(currentText), nextBlock)
-  }
-
-  const trimmed = currentText.trimEnd()
-  if (!trimmed) return `${nextBlock}\n`
-
-  const firstTableMatch = trimmed.match(/^\s*\[/m)
-  if (!firstTableMatch || firstTableMatch.index === undefined) {
-    return `${trimmed}\n\n${nextBlock}\n`
-  }
-
-  const index = firstTableMatch.index
-  const prefix = trimmed.slice(0, index).trimEnd()
-  const suffix = trimmed.slice(index).replace(/^\n+/, "")
-
-  const parts = [
-    prefix,
-    nextBlock,
-    suffix
-  ].filter((part) => part.length > 0)
-
-  return `${parts.join("\n\n")}\n`
 }
 
 function removeManagedBlock(text: string): string {
@@ -318,87 +312,8 @@ async function maybeCreateBackup(path: string): Promise<string | undefined> {
   return createBackup(path)
 }
 
-function escapeDoubleQuoted(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")
-}
-
-function extractNotifyAssignment(text: string): { start: number, end: number, args: string[] } | null {
-  const match = text.match(/^\s*notify\s*=\s*\[/m)
-  if (!match || match.index === undefined) return null
-
-  const start = match.index
-  const openBracketIndex = start + match[0].lastIndexOf("[")
-  let index = openBracketIndex + 1
-  let inString = false
-  let escaping = false
-
-  for (; index < text.length; index += 1) {
-    const char = text[index]
-    if (inString) {
-      if (escaping) {
-        escaping = false
-        continue
-      }
-      if (char === "\\") {
-        escaping = true
-        continue
-      }
-      if (char === "\"") {
-        inString = false
-      }
-      continue
-    }
-
-    if (char === "\"") {
-      inString = true
-      continue
-    }
-
-    if (char === "]") {
-      const end = includeTrailingNewline(text, index + 1)
-      const assignment = text.slice(start, index + 1)
-      const args = parseNotifyArgs(assignment)
-      return args ? { start, end, args } : null
-    }
-  }
-
-  return null
-}
-
-function parseNotifyArgs(assignment: string): string[] | null {
-  const start = assignment.indexOf("[")
-  const end = assignment.lastIndexOf("]")
-  if (start === -1 || end === -1 || end <= start) return null
-
-  const arrayLiteral = assignment.slice(start, end + 1)
-  try {
-    const parsed = JSON.parse(arrayLiteral) as unknown
-    if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== "string")) {
-      return null
-    }
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function removeNotifyAssignment(
-  text: string,
-  assignment: { start: number, end: number, args: string[] }
-): string {
-  return `${text.slice(0, assignment.start)}${text.slice(assignment.end)}`.trimEnd() + "\n"
-}
-
-function includeTrailingNewline(text: string, index: number): number {
-  return text[index] === "\n" ? index + 1 : index
-}
-
-function normalizeText(value: string): string {
-  return value.replace(/\s+$/, "")
-}
-
 function toTomlString(value: string): string {
-  return `"${escapeDoubleQuoted(value)}"`
+  return JSON.stringify(value)
 }
 
 async function loadHooksConfig(): Promise<CodexHooksConfig> {
@@ -409,104 +324,83 @@ async function loadHooksConfig(): Promise<CodexHooksConfig> {
   let parsed: unknown
   try { parsed = JSON.parse(text) } catch { throw new Error(`Invalid Codex hooks configuration at ${hooksPath}.`) }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`Invalid Codex hooks configuration at ${hooksPath}.`)
-  return parsed as CodexHooksConfig
+  const config = parsed as CodexHooksConfig
+  if (config.hooks !== undefined && !isHooksMap(config.hooks)) {
+    throw new Error(`Invalid Codex hooks configuration at ${hooksPath}.`)
+  }
+  return config
 }
 
-function upsertEventHook(
-  config: CodexHooksConfig,
-  eventName: string,
-  matcher: string | undefined,
-  marker: string,
-  command: string
-): void {
-  const eventEntries = config.hooks?.[eventName] ?? []
-  const targetEntry = matcher === undefined
-    ? ensureDefaultMatcherEntry(eventEntries)
-    : ensureMatcherEntry(eventEntries, matcher)
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
 
-  targetEntry.hooks ??= []
-  const hookIndex = targetEntry.hooks.findIndex((entry) => entry.command?.includes(marker))
-  const nextHook: CodexHookEntry = {
+function isHooksMap(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return Object.values(value).every(entries => Array.isArray(entries) && entries.every(entry => {
+    if (!isRecord(entry)) return false
+    if (entry.matcher !== undefined && typeof entry.matcher !== "string") return false
+    if (entry.hooks === undefined) return true
+    return Array.isArray(entry.hooks) && entry.hooks.every(hook =>
+      isRecord(hook) && (hook.command === undefined || typeof hook.command === "string"))
+  }))
+}
+
+function buildExpectedHooks(options: InstallOptions): Record<string, CodexHookEntry> {
+  const buildHook = (event: "finished" | "needs-approval", marker: string, statusMessage: string): CodexHookEntry => ({
     type: "command",
-    command,
+    command: buildCodexHookCommand(event, options.webhook, marker, options.idleSeconds),
     async: true,
     timeout: 5,
-    statusMessage: "Sending brrr approval notification"
-  }
-
-  if (hookIndex >= 0) {
-    targetEntry.hooks[hookIndex] = nextHook
-  } else {
-    targetEntry.hooks.push(nextHook)
-  }
-
-  config.hooks ??= {}
-  config.hooks[eventName] = eventEntries
-}
-
-function removeEventHook(
-  config: CodexHooksConfig,
-  eventName: string,
-  matcher: string | undefined,
-  marker: string
-): void {
-  const eventEntries = config.hooks?.[eventName]
-  if (!eventEntries) return
-
-  const filteredEntries = eventEntries.flatMap((entry) => {
-    const matches = matcher === undefined
-      ? !entry.matcher
-      : entry.matcher === matcher
-
-    if (!matches) return [entry]
-
-    const hooks = (entry.hooks ?? []).filter((hook) => !hook.command?.includes(marker))
-    if (hooks.length === 0) return []
-    return [{ ...entry, hooks }]
+    statusMessage
   })
-
-  if (filteredEntries.length === 0) {
-    delete config.hooks?.[eventName]
-  } else {
-    config.hooks ??= {}
-    config.hooks[eventName] = filteredEntries
-  }
-
-  if (config.hooks && Object.keys(config.hooks).length === 0) {
-    delete config.hooks
+  return {
+    Stop: buildHook("finished", STOP_MARKER, "Sending brrr finished notification"),
+    PermissionRequest: buildHook("needs-approval", PERMISSION_REQUEST_MARKER, "Sending brrr approval notification")
   }
 }
 
-function ensureDefaultMatcherEntry(entries: CodexMatcherEntry[]): CodexMatcherEntry {
-  const existing = entries.find((entry) => !entry.matcher)
-  if (existing) return existing
-
-  const entry: CodexMatcherEntry = { hooks: [] }
-  entries.push(entry)
-  return entry
+function isManagedHook(hook: CodexHookEntry): boolean {
+  return typeof hook.command === "string"
+    && /# brrr:codex:(stop|permissionrequest):v\d+$/.test(hook.command)
 }
 
-function ensureMatcherEntry(entries: CodexMatcherEntry[], matcher: string): CodexMatcherEntry {
-  const existing = entries.find((entry) => entry.matcher === matcher)
-  if (existing) return existing
-
-  const entry: CodexMatcherEntry = { matcher, hooks: [] }
-  entries.push(entry)
-  return entry
+function hasManagedHooks(config: CodexHooksConfig): boolean {
+  return Object.values(config.hooks ?? {}).some(entries =>
+    entries.some(entry => entry.hooks?.some(isManagedHook)))
 }
 
-function findHookCommand(
-  config: CodexHooksConfig,
-  eventName: string,
-  matcher: string | undefined,
-  marker: string
-): string | undefined {
-  const entries = config.hooks?.[eventName] ?? []
-  for (const entry of entries) {
-    const isTarget = matcher === undefined ? !entry.matcher : entry.matcher === matcher
-    if (!isTarget) continue
+function hasExpectedHooks(config: CodexHooksConfig, expected: Record<string, CodexHookEntry>): boolean {
+  const managed = Object.entries(config.hooks ?? {}).flatMap(([event, entries]) =>
+    entries.flatMap(entry => (entry.hooks ?? []).filter(isManagedHook).map(hook => ({ event, entry, hook }))))
+  return managed.length === Object.keys(expected).length && Object.entries(expected).every(([event, hook]) => {
+    const matches = managed.filter(item => item.event === event && !item.entry.matcher)
+    if (matches.length !== 1) return false
+    const actual = matches[0].hook
+    return Object.keys(actual).length === Object.keys(hook).length
+      && Object.entries(hook).every(([key, value]) => (actual as Record<string, unknown>)[key] === value)
+  })
+}
+
+function removeManagedHooks(config: CodexHooksConfig): void {
+  for (const [event, entries] of Object.entries(config.hooks ?? {})) {
+    const remaining = entries.flatMap(entry => {
+      const hooks = entry.hooks ?? []
+      const filtered = hooks.filter(hook => !isManagedHook(hook))
+      if (filtered.length === hooks.length) return [entry]
+      return filtered.length ? [{ ...entry, hooks: filtered }] : []
+    })
+    if (remaining.length) config.hooks![event] = remaining
+    else delete config.hooks![event]
+  }
+  if (config.hooks && Object.keys(config.hooks).length === 0) delete config.hooks
+}
+
+function findHookCommand(config: CodexHooksConfig, event: string, marker: string): string | undefined {
+  for (const entry of config.hooks?.[event] ?? []) {
+    if (entry.matcher) continue
     for (const hook of entry.hooks ?? []) {
-      if (hook.command?.includes(marker)) return hook.command
+      if (hook.type === "command" && hook.command?.endsWith(`# ${marker}`)) return hook.command
     }
   }
 }
