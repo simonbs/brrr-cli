@@ -129,7 +129,7 @@ Codex stores both finished and approval notifications in `$CODEX_HOME/hooks.json
 
 Re-running installation with matching hooks and options reports `already configured` and leaves the files untouched. If hooks are missing, duplicated, or outdated, brrr updates only its own hooks and preserves unrelated configuration.
 
-For existing installations, the next install removes the legacy brrr `notify` block from `config.toml` and restores any notification command saved by brrr. Fresh installations do not create or modify `config.toml`. Uninstall also cleans up legacy installations.
+For existing installations, the next install removes the legacy brrr `notify` block from `config.toml` and restores any notification command saved by brrr. It also removes legacy brrr commands nested in another integration’s `--previous-notify` chain, preserving that integration and any original notifier. Fresh installations do not create or modify `config.toml`. Uninstall also cleans up legacy installations.
 
 #### Only Notify When Idle
 

@@ -1,4 +1,5 @@
 import { basename, join } from "node:path"
+import { parse as parseToml } from "smol-toml"
 import { homedir } from "node:os"
 import { createBackup } from "./backup.js"
 import { readTextFileIfExists, writeTextFile } from "../../utils/fs.js"
@@ -58,7 +59,7 @@ export async function installCodex(options: InstallOptions): Promise<InstallResu
   const configChanged = currentText !== nextText
   const expectedHooks = buildExpectedHooks(options)
   const hooksChanged = !hasExpectedHooks(currentConfig, expectedHooks)
-  const wasInstalled = block !== null || hasManagedHooks(currentConfig)
+  const wasInstalled = block !== null || configChanged || hasManagedHooks(currentConfig)
 
   if (!configChanged && !hooksChanged) {
     return { changed: false, message: "already configured" }
@@ -112,14 +113,113 @@ export async function uninstallCodex(): Promise<UninstallResult> {
 
 function removeLegacyNotify(text: string): string {
   const block = extractManagedBlock(text)
-  if (!block) return text
-  const originalNotify = extractOriginalNotifyFromCodexBlock(block)
-  const cleaned = removeManagedBlock(text)
-  // Preserve a newer user-configured notify if one exists outside our block.
-  const topLevelText = cleaned.split(/^\s*\[/m, 1)[0]
-  return originalNotify && !/^\s*notify\s*=/m.test(topLevelText)
-    ? upsertTopLevelNotify(cleaned, originalNotify)
-    : cleaned
+  const originalNotify = block ? extractOriginalNotifyFromCodexBlock(block) : undefined
+  let cleaned = text
+  if (block) {
+    const blockNotify = findNotifyAssignment(block)
+    // Another integration may have wrapped our command inside the marked block.
+    // Keep that integration's command and remove only the brrr comments.
+    cleaned = blockNotify && !isLegacyBrrrNotify(blockNotify.args)
+      ? text.replace(block, block.replace(/^# brrr (?:agent integration (?:start|end)|original notify json: .*)[\r\n]*/gm, ""))
+      : removeManagedBlock(text)
+    if (originalNotify && !findNotifyAssignment(cleaned)) {
+      cleaned = upsertTopLevelNotify(cleaned, originalNotify)
+    }
+  }
+
+  const assignment = findNotifyAssignment(cleaned)
+  if (!assignment) return cleaned
+  const nextArgs = removeBrrrFromNotify(assignment.args, originalNotify)
+  if (nextArgs === assignment.args) return cleaned
+  const replacement = nextArgs ? `notify = [${nextArgs.map(toTomlString).join(", ")}]` : ""
+  return cleaned.slice(0, assignment.start) + replacement + cleaned.slice(assignment.end)
+}
+
+function isLegacyBrrrNotify(args: string[]): boolean {
+  const agentIndex = args.indexOf("--agent", 3)
+  const eventIndex = args.indexOf("--event", 3)
+  return basename(args[0] ?? "") === "brrr" && args[1] === "agent" && args[2] === "dispatch"
+    && agentIndex >= 3 && args[agentIndex + 1] === "codex"
+    && eventIndex >= 3 && args[eventIndex + 1] === "finished"
+}
+
+function parseNotifyArgs(text: string): string[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return Array.isArray(parsed) && parsed.every(arg => typeof arg === "string") ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function removeBrrrFromNotify(args: string[], originalNotify?: string[]): string[] | undefined {
+  if (isLegacyBrrrNotify(args)) {
+    const previousIndex = args.indexOf("--previous-notify", 3)
+    const previous = (previousIndex >= 3 ? parseNotifyArgs(args[previousIndex + 1] ?? "") : undefined) ?? originalNotify
+    return previous ? removeBrrrFromNotify(previous) : undefined
+  }
+
+  let nextArgs = args
+  for (let index = 1; index < nextArgs.length - 1; index += 1) {
+    if (nextArgs[index] !== "--previous-notify") continue
+    const previous = parseNotifyArgs(nextArgs[index + 1])
+    if (!previous) continue
+    const nextPrevious = removeBrrrFromNotify(previous, originalNotify)
+    if (nextPrevious === previous) continue
+    if (nextArgs === args) nextArgs = [...args]
+    if (nextPrevious) nextArgs[index + 1] = JSON.stringify(nextPrevious)
+    else {
+      nextArgs.splice(index, 2)
+      index -= 1
+    }
+  }
+  return nextArgs
+}
+
+// Locate just the top-level assignment so the rest of the TOML stays untouched.
+// Skip TOML strings and comments, including multiline strings containing brackets.
+function findNotifyAssignment(text: string): { start: number, end: number, args: string[] } | undefined {
+  for (let index = 0; index < text.length; index += 1) {
+    if (index === 0 || text[index - 1] === "\n") {
+      const line = text.slice(index)
+      if (/^[ \t]*\[/.test(line)) return undefined
+      const match = line.match(/^[ \t]*(?:notify|"notify"|'notify')[ \t]*=[ \t]*\[/)
+      if (match) {
+        let depth = 1
+        for (let end = index + match[0].length; end < text.length; end += 1) {
+          if (text[end] === '"' || text[end] === "'") end = skipTomlString(text, end)
+          else if (text[end] === "#") end = skipTomlComment(text, end)
+          else if (text[end] === "[") depth += 1
+          else if (text[end] === "]" && --depth === 0) {
+            const assignment = text.slice(index, end + 1)
+            const args = parseToml(assignment).notify
+            if (!Array.isArray(args) || !args.every(arg => typeof arg === "string")) {
+              throw new Error("Invalid Codex notify command; expected an array of strings.")
+            }
+            return { start: index, end: end + 1, args }
+          }
+        }
+        throw new Error("Unterminated Codex notify command.")
+      }
+    }
+    if (text[index] === '"' || text[index] === "'") index = skipTomlString(text, index)
+    else if (text[index] === "#") index = skipTomlComment(text, index)
+  }
+}
+
+function skipTomlComment(text: string, start: number): number {
+  const newline = text.indexOf("\n", start)
+  return newline === -1 ? text.length : newline - 1
+}
+
+function skipTomlString(text: string, start: number): number {
+  const quote = text[start]
+  const delimiter = text.startsWith(quote.repeat(3), start) ? quote.repeat(3) : quote
+  for (let index = start + delimiter.length; index < text.length; index += 1) {
+    if (quote === '"' && text[index] === "\\") index += 1
+    else if (text.startsWith(delimiter, index)) return index + delimiter.length - 1
+  }
+  throw new Error("Unterminated string in Codex configuration.")
 }
 
 export function getCodexConfigPath(): string {
@@ -212,12 +312,8 @@ async function maybeCreateBackup(path: string): Promise<string | undefined> {
   return createBackup(path)
 }
 
-function escapeDoubleQuoted(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")
-}
-
 function toTomlString(value: string): string {
-  return `"${escapeDoubleQuoted(value)}"`
+  return JSON.stringify(value)
 }
 
 async function loadHooksConfig(): Promise<CodexHooksConfig> {
