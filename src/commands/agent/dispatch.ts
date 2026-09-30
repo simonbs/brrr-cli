@@ -101,11 +101,9 @@ async function buildDispatchPayload(options: DispatchOptions): Promise<DispatchP
     }
   }
 
-  if (!options.payloadJson) {
-    throw new Error("Missing Codex payload JSON.")
-  }
-  const input = JSON.parse(options.payloadJson) as CodexPayload
-  const payload = buildCodexFinishedPayload(input.cwd, input["last-assistant-message"] ?? undefined)
+  // Keep accepting legacy notify payloads while existing installs are migrated.
+  const input = JSON.parse(options.payloadJson ?? await readStdin()) as CodexPayload
+  const payload = buildCodexFinishedPayload(input.cwd, input.last_assistant_message ?? input["last-assistant-message"])
   return payload ? { payload } : undefined
 }
 
@@ -138,6 +136,7 @@ interface CodexPayload {
   tool_input?: unknown
   cwd?: string
   message?: string
+  last_assistant_message?: string | null
   "last-assistant-message"?: string | null
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { dispatchCommand } from "../src/commands/agent/dispatch.js"
 
-async function dispatchCodexWithStdin(event: "needs-approval", payload: unknown): Promise<void> {
+async function dispatchCodexWithStdin(event: "finished" | "needs-approval", payload: unknown): Promise<void> {
   const stdinChunks = [JSON.stringify(payload)]
   const originalStdin = process.stdin
   const stdin = Object.assign(stdinChunks, {
@@ -60,6 +60,27 @@ describe("dispatch", () => {
       })
     })
 
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test("sends Stop hook messages from stdin", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ status: 202, json: async () => ({ success: true }) })
+    vi.stubGlobal("fetch", fetchMock)
+    await dispatchCodexWithStdin("finished", { hook_event_name: "Stop", cwd: "/tmp/project", last_assistant_message: "Hook finished" })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ title: "Codex finished", message: "Hook finished" })
+  })
+
+  test("Stop hooks fall back when the assistant message is null", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ status: 202, json: async () => ({ success: true }) })
+    vi.stubGlobal("fetch", fetchMock)
+    await dispatchCodexWithStdin("finished", { hook_event_name: "Stop", cwd: "/tmp/project", last_assistant_message: null })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).message).toBe("Codex finished working in 'project'.")
+  })
+
+  test("Stop hooks skip title-only assistant JSON", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    await dispatchCodexWithStdin("finished", { hook_event_name: "Stop", last_assistant_message: '{"title":"New title"}' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

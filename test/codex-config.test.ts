@@ -3,12 +3,11 @@ import {
   buildCodexApprovalPayload,
   buildCodexFinishedPayload,
   buildCodexHookCommand,
-  buildCodexManagedBlock,
-  extractWebhookFromCodexBlock
+  installCodex, uninstallCodex, readCodexInstallState, getCodexConfigPath, getCodexHooksPath
 } from "../src/agent/config/codex-config.js"
 import { parseWebhookRef } from "../src/agent/webhook-ref.js"
 import { getAgentIconUrl } from "../src/agent/icons.js"
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, vi } from "vitest"
@@ -31,37 +30,6 @@ afterEach(() => {
 })
 
 describe("codex config generation", () => {
-  test("generates managed block", () => {
-    const block = buildCodexManagedBlock(parseWebhookRef("https://api.brrr.now/v1/br_test"))
-    expect(block).toContain("# brrr agent integration start")
-    expect(block).toContain("notify = [")
-    expect(block).toContain("\"brrr\"")
-    expect(block).toContain("\"agent\"")
-    expect(block).toContain("\"--payload-json\"")
-    expect(extractWebhookFromCodexBlock(block)).toBe("https://api.brrr.now/v1/br_test")
-  })
-
-  test("includes idle threshold when configured", () => {
-    const block = buildCodexManagedBlock(parseWebhookRef("https://api.brrr.now/v1/br_test"), 300)
-    expect(block).toContain("\"--idle-seconds\", \"300\"")
-  })
-
-  test("stores original notify in a comment", () => {
-    const block = buildCodexManagedBlock(
-      parseWebhookRef("https://api.brrr.now/v1/br_test"),
-      300,
-      ["/Applications/Test.app/Contents/MacOS/test", "turn-ended"]
-    )
-
-    expect(block).toContain("# brrr original notify json:")
-    expect(block).not.toContain("\"--previous-notify\"")
-  })
-
-  test("preserves env refs", () => {
-    const block = buildCodexManagedBlock(parseWebhookRef("${BRRR_WEBHOOK_URL}"))
-    expect(extractWebhookFromCodexBlock(block)).toBe("${BRRR_WEBHOOK_URL}")
-  })
-
   test("generates permission request hook command", () => {
     const command = buildCodexHookCommand(
       "needs-approval",
@@ -103,135 +71,121 @@ describe("codex config generation", () => {
     })
   })
 
-  test("installs notify at top level before existing tables", async () => {
+  async function setup() {
     const home = await mkdtemp(join(tmpdir(), "brrr-codex-home-"))
-    process.env.HOME = home
-    vi.resetModules()
+    process.env.CODEX_HOME = home
+    return home
+  }
 
-    const configDir = join(home, ".codex")
-    await mkdir(configDir, { recursive: true })
-    await writeFile(join(configDir, "config.toml"), [
-      'model = "gpt-5.3-codex"',
-      "",
-      "[mcp_servers.figma]",
-      'url = "https://mcp.figma.com/mcp"',
-      "enabled = false",
-      ""
-    ].join("\n"), "utf8")
+  const options = { webhook: parseWebhookRef("https://api.brrr.now/v1/br_test"), idleSeconds: 20 }
+  const legacyBlock = [
+    "# brrr agent integration start",
+    '# brrr original notify json: ["/Users/test/notify","turn-ended"]',
+    'notify = ["brrr", "agent", "dispatch", "--agent", "codex", "--event", "finished", "--webhook", "https://api.brrr.now/v1/br_test", "--payload-json"]',
+    "# brrr agent integration end"
+  ].join("\n")
 
-    const { installCodex, getCodexConfigPath } = await import("../src/agent/config/codex-config.js")
-    await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
-    const config = await readFile(getCodexConfigPath(), "utf8")
-
-    expect(config).toMatch(/# brrr agent integration start\nnotify = \[.*"--webhook".*\]\n# brrr agent integration end\n\n\[mcp_servers\.figma\]/s)
-  })
-
-  test("replaces existing notify, saves it in a comment, and restores it on uninstall", async () => {
-    const home = await mkdtemp(join(tmpdir(), "brrr-codex-home-"))
-    process.env.HOME = home
-    vi.resetModules()
-
-    const configDir = join(home, ".codex")
-    await mkdir(configDir, { recursive: true })
-    await writeFile(join(configDir, "config.toml"), [
-      'model = "gpt-5.4"',
-      'notify = ["/Users/test/notify", "turn-ended"]',
-      ""
-    ].join("\n"), "utf8")
-
-    const { installCodex, uninstallCodex, getCodexConfigPath } = await import("../src/agent/config/codex-config.js")
-    await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test"), idleSeconds: 20 })
-    const installedConfig = await readFile(getCodexConfigPath(), "utf8")
-
-    expect(installedConfig).toContain("# brrr original notify json: [\"/Users/test/notify\",\"turn-ended\"]")
-    expect(installedConfig).toContain("\"brrr\", \"agent\", \"dispatch\"")
-    expect(installedConfig).not.toContain("\"--previous-notify\"")
-    expect(installedConfig).not.toContain('notify = ["/Users/test/notify", "turn-ended"]')
-
-    await uninstallCodex()
-    const restoredConfig = await readFile(getCodexConfigPath(), "utf8")
-
-    expect(restoredConfig).toContain('notify = ["/Users/test/notify", "turn-ended"]')
-    expect(restoredConfig).not.toContain("# brrr agent integration start")
-  })
-
-  test("uses CODEX_HOME for config and hooks", async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), "brrr-codex-home-"))
-    process.env.CODEX_HOME = codexHome
-    vi.resetModules()
-
-    const { installCodex, getCodexConfigPath, getCodexHooksPath } = await import("../src/agent/config/codex-config.js")
-    await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test") })
-
-    expect(getCodexConfigPath()).toBe(join(codexHome, "config.toml"))
-    expect(getCodexHooksPath()).toBe(join(codexHome, "hooks.json"))
-    expect(await readFile(getCodexConfigPath(), "utf8")).toContain("notify = [")
-    expect(await readFile(getCodexHooksPath(), "utf8")).toContain("\"PermissionRequest\"")
-  })
-
-  test("installs and uninstalls permission request hook without dropping existing hooks", async () => {
-    const home = await mkdtemp(join(tmpdir(), "brrr-codex-home-"))
-    process.env.HOME = home
-    vi.resetModules()
-
-    const configDir = join(home, ".codex")
-    await mkdir(configDir, { recursive: true })
-    await writeFile(join(configDir, "hooks.json"), JSON.stringify({
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: "Bash",
-            hooks: [{ type: "command", command: "echo existing" }]
-          }
-        ]
-      }
-    }, null, 2), "utf8")
-
-    const { installCodex, uninstallCodex, getCodexHooksPath } = await import("../src/agent/config/codex-config.js")
-    await installCodex({ webhook: parseWebhookRef("https://api.brrr.now/v1/br_test"), idleSeconds: 20 })
-    const installedHooks = await readFile(getCodexHooksPath(), "utf8")
-
-    expect(installedHooks).toContain("\"PreToolUse\"")
-    expect(installedHooks).toContain("\"echo existing\"")
-    expect(installedHooks).toContain("\"PermissionRequest\"")
-    expect(installedHooks).toContain("brrr:codex:permissionrequest:v1")
-
-    await uninstallCodex()
-    const restoredHooks = await readFile(getCodexHooksPath(), "utf8")
-
-    expect(restoredHooks).toContain("\"PreToolUse\"")
-    expect(restoredHooks).toContain("\"echo existing\"")
-    expect(restoredHooks).not.toContain("\"PermissionRequest\"")
-    expect(restoredHooks).not.toContain("brrr:codex:permissionrequest:v1")
-  })
-
-  test("uninstalls hook-only partial installs without creating config.toml", async () => {
-    const home = await mkdtemp(join(tmpdir(), "brrr-codex-home-"))
-    process.env.HOME = home
-    vi.resetModules()
-
-    const configDir = join(home, ".codex")
-    await mkdir(configDir, { recursive: true })
-    await writeFile(join(configDir, "hooks.json"), JSON.stringify({
-      hooks: {
-        PermissionRequest: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: "brrr agent dispatch --agent codex --event needs-approval --webhook https://api.brrr.now/v1/br_test # brrr:codex:permissionrequest:v1"
-              }
-            ]
-          }
-        ]
-      }
-    }, null, 2), "utf8")
-
-    const { uninstallCodex, getCodexConfigPath, getCodexHooksPath } = await import("../src/agent/config/codex-config.js")
-    await uninstallCodex()
-    const restoredHooks = await readFile(getCodexHooksPath(), "utf8")
-
+  test("installs both hooks using CODEX_HOME without creating TOML", async () => {
+    const home = await setup()
+    await installCodex(options)
+    expect(getCodexHooksPath()).toBe(join(home, "hooks.json"))
     await expect(stat(getCodexConfigPath())).rejects.toMatchObject({ code: "ENOENT" })
-    expect(restoredHooks).toBe("{}\n")
+    const config = JSON.parse(await readFile(getCodexHooksPath(), "utf8"))
+    expect(config.hooks.Stop[0].hooks[0]).toMatchObject({ type: "command", async: true, timeout: 5 })
+    expect(config.hooks.Stop[0].hooks[0].command).toContain("--event finished")
+    expect(config.hooks.PermissionRequest[0].hooks[0].command).toContain("--event needs-approval")
+    expect(await readCodexInstallState()).toMatchObject({ installed: true, configPath: getCodexHooksPath(), idleSeconds: 20, webhookRef: "https://api.brrr.now/v1/br_test" })
+  })
+
+  test("leaves existing TOML and notify byte-for-byte unchanged", async () => {
+    await setup()
+    const text = 'model = "gpt-5.4"\nnotify = ["custom"]\n\n[mcp_servers.test]\nenabled = true\n'
+    await writeFile(getCodexConfigPath(), text)
+    await installCodex(options)
+    await uninstallCodex()
+    expect(await readFile(getCodexConfigPath(), "utf8")).toBe(text)
+  })
+
+  test("skips matching hooks regardless of formatting or property order without backups or writes", async () => {
+    const home = await setup()
+    await installCodex(options)
+    const config = JSON.parse(await readFile(getCodexHooksPath(), "utf8"))
+    config.hooks.Stop[0].hooks[0] = Object.fromEntries(Object.entries(config.hooks.Stop[0].hooks[0]).reverse())
+    const text = JSON.stringify(config)
+    await writeFile(getCodexHooksPath(), text)
+    const before = await stat(getCodexHooksPath())
+    expect(await installCodex(options)).toEqual({ changed: false, message: "already configured" })
+    expect(await readFile(getCodexHooksPath(), "utf8")).toBe(text)
+    expect((await stat(getCodexHooksPath())).mtimeMs).toBe(before.mtimeMs)
+    expect(await readdir(home)).toEqual(["hooks.json"])
+  })
+
+  test("repairs missing, outdated, altered, and duplicate hooks while preserving unrelated data", async () => {
+    await setup()
+    await installCodex(options)
+    const config = JSON.parse(await readFile(getCodexHooksPath(), "utf8"))
+    config.description = "My hooks"
+    const oldStop = config.hooks.Stop[0].hooks[0]
+    oldStop.command = oldStop.command.replace("stop:v1", "stop:v0")
+    oldStop.async = false
+    config.hooks.Stop.push({ matcher: "unexpected", hooks: [oldStop, { type: "command", command: "echo custom", extra: true }] })
+    delete config.hooks.PermissionRequest
+    await writeFile(getCodexHooksPath(), JSON.stringify(config))
+    expect((await readCodexInstallState()).installed).toBe(false)
+    const result = await installCodex({ ...options, idleSeconds: 300, webhook: parseWebhookRef("${BRRR_WEBHOOK_URL}") })
+    expect(result).toMatchObject({ changed: true, message: "reinstalled" })
+    expect(result.backupPath).toContain("hooks.json.brrr-backup-")
+    const repaired = JSON.parse(await readFile(getCodexHooksPath(), "utf8"))
+    expect(repaired.description).toBe("My hooks")
+    expect(repaired.hooks.Stop[0]).toEqual({ matcher: "unexpected", hooks: [{ type: "command", command: "echo custom", extra: true }] })
+    expect(JSON.stringify(repaired)).not.toContain("stop:v0")
+    expect(repaired.hooks.Stop[1].hooks[0].command).toContain("--idle-seconds 300")
+    expect((await readCodexInstallState()).webhookRef).toBe("${BRRR_WEBHOOK_URL}")
+    expect((await installCodex({ ...options, idleSeconds: 300, webhook: parseWebhookRef("${BRRR_WEBHOOK_URL}") })).changed).toBe(false)
+    await uninstallCodex()
+    expect(JSON.parse(await readFile(getCodexHooksPath(), "utf8"))).toEqual({ description: "My hooks", hooks: { Stop: [repaired.hooks.Stop[0]] } })
+  })
+
+  test.each(["install", "uninstall"])("%s cleans legacy TOML and restores saved notify before tables", async operation => {
+    await setup()
+    await writeFile(getCodexConfigPath(), `model = "gpt-5.4"\n\n${legacyBlock}\n\n[mcp_servers.test]\nenabled = true\n`)
+    const result = operation === "install" ? await installCodex(options) : await uninstallCodex()
+    expect(result.changed).toBe(true)
+    expect(await readFile(result.backupPath!, "utf8")).toContain(legacyBlock)
+    const restored = await readFile(getCodexConfigPath(), "utf8")
+    expect(restored).not.toContain("brrr agent integration")
+    expect(restored.indexOf('notify = ["/Users/test/notify", "turn-ended"]')).toBeLessThan(restored.indexOf("[mcp_servers.test]"))
+    if (operation === "install") expect((await installCodex(options)).changed).toBe(false)
+  })
+
+  test("migrates legacy notify without a saved command and preserves a newer notify", async () => {
+    await setup()
+    await writeFile(getCodexConfigPath(), legacyBlock.replace(/^# brrr original notify json: .*\n/m, "") + "\n")
+    await installCodex(options)
+    expect(await readFile(getCodexConfigPath(), "utf8")).toBe("")
+    await writeFile(getCodexConfigPath(), `notify = ['new-command']\n${legacyBlock}\n`)
+    await installCodex(options)
+    expect(await readFile(getCodexConfigPath(), "utf8")).toBe("notify = ['new-command']\n")
+  })
+
+  test.each(['{', '[]', '{"hooks":[]}', '{"hooks":{"Stop":{}}}', '{"hooks":{"Stop":[{"hooks":[null]}]}}'])("rejects invalid JSON shape without modifying either file: %s", async text => {
+    const home = await setup()
+    await writeFile(getCodexHooksPath(), text)
+    await writeFile(getCodexConfigPath(), legacyBlock)
+    await expect(installCodex(options)).rejects.toThrow("Invalid Codex hooks configuration")
+    await expect(uninstallCodex()).rejects.toThrow("Invalid Codex hooks configuration")
+    expect(await readFile(getCodexHooksPath(), "utf8")).toBe(text)
+    expect(await readFile(getCodexConfigPath(), "utf8")).toBe(legacyBlock)
+    expect((await readdir(home)).sort()).toEqual(["config.toml", "hooks.json"])
+  })
+
+  test("uninstalls JSON hooks without creating TOML and skips a second uninstall", async () => {
+    await setup()
+    await installCodex(options)
+    await uninstallCodex()
+    expect(await readFile(getCodexHooksPath(), "utf8")).toBe("{}\n")
+    await expect(stat(getCodexConfigPath())).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await uninstallCodex()).toEqual({ changed: false, message: "not installed" })
+    expect((await readCodexInstallState()).installed).toBe(false)
   })
 })
